@@ -1,0 +1,41 @@
+sudo: required
+
+language: cpp
+
+env:
+    global:
+        - CMAKE_VERSION="cmake-3.4.0-Linux-x86_64"
+        - CMAKE_BINARY="${CMAKE_VERSION}/bin/cmake"
+
+addons:
+    apt:
+        sources:
+            - llvm-toolchain-precise-3.7
+            - ubuntu-toolchain-r-test
+        packages:
+            - g++-5
+            - gcc-5
+            - wget
+            - libboost-all-dev
+
+compiler:
+  - gcc
+
+before_install:
+    - wget https://cmake.org/files/v3.4/cmake-3.4.0-Linux-x86_64.tar.gz --no-check-certificate
+    - tar -xzvf cmake-3.4.0-Linux-x86_64.tar.gz
+
+install:
+    - if [ "$CXX" = "g++" ]; then export CXX="g++-5" CC="gcc-5"; fi
+
+before_script:
+    - echo $CC
+    - echo $CXX
+    - $CXX --version
+    - $CC --version
+    - ${CMAKE_BINARY} --version
+    - ${CMAKE_BINARY} .
+    - make
+
+script:
+  - ./test_netlib
