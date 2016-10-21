@@ -1,27 +1,15 @@
-#include "boost/bind/bind.hpp"
-#include "boost/asio.hpp"
+#define CATCH_CONFIG_MAIN
+#include "Netlib.hpp"
+#include "catch.hpp"
 
-#include <iostream>
+using namespace netlib;
 
-int toto (int a, int b) {
-  return a + b;
-}
+SCENARIO("Test boost headers-only/linked library and Catch") {
+  auto test1 = boost::bind(&simple_test_1, "test");
+  auto test2 = simple_test_2();
 
-int main() {
-  auto test = boost::bind(&toto, 1, 2);
-
-  auto result = test();
-
-  std::cout << result << std::endl;
-
-
-  boost::asio::io_service service;
-  boost::asio::ip::tcp::socket socket(service);
-
-  auto res = socket.is_open();
-
-  std::cout << std::boolalpha << res << std::endl;
-
-  return 0;
-
+  std::cout << test1() << "\n";
+  REQUIRE(test1() == "test");
+  std::cout << std::boolalpha << test2 << "\n";
+  REQUIRE(test2 == false);
 }
