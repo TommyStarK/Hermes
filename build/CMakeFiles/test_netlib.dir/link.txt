@@ -1,0 +1,1 @@
+/usr/bin/c++    -std=c++14 -Wno-ignored-qualifiers -Wno-unused-parameter -Wno-unused-variable -lpthread -lboost_system -O3 -DNDEBUG   CMakeFiles/test_netlib.dir/tests/main.cpp.o  -o test_netlib -rdynamic 
