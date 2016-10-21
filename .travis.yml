@@ -34,8 +34,11 @@ before_script:
     - $CXX --version
     - $CC --version
     - ${CMAKE_BINARY} --version
-    - ${CMAKE_BINARY} .
+    - mkdir build
+    - cd build
+    - ${CMAKE_BINARY} ..
     - make
 
 script:
   - ./test_netlib
+  - rm -rf build
