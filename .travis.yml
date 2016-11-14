@@ -16,7 +16,6 @@ addons:
             - g++-5
             - gcc-5
             - wget
-            - libboost-all-dev
 
 compiler:
   - gcc
