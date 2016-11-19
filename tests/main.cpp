@@ -4,10 +4,6 @@
 
 using namespace netlib;
 
-<<<<<<< HEAD
-SCENARIO("simple test") {
-  REQUIRE(network::tcp::simple_test_1("toto") == "toto");
-=======
 SCENARIO("test tcp socket") {
   network::tcp::socket socket;
 
@@ -36,5 +32,4 @@ SCENARIO("test tcp socket") {
   // auto res = socket.receive(1024);
   // std::cout << res.data() << std::endl;
   // socket.close();
->>>>>>> dev
 }

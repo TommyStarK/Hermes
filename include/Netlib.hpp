@@ -9,19 +9,6 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
-<<<<<<< HEAD
-
-namespace netlib {
-
-namespace network {
-
-namespace tcp {
-std::string simple_test_1(const std::string& s) { return std::string(s); }
-
-}  // namespace tcp
-
-}  // namespace network
-=======
 #include <vector>
 
 namespace netlib {
@@ -33,7 +20,6 @@ namespace tools {
 #define __RUNTIME_ERROR__(error) throw std::runtime_error(error);
 #define __INVALID_ARG__(error) throw std::invalid_argument(error);
 #define __DISPLAY_ERROR__(error) std::cerr << error << std::endl;
->>>>>>> dev
 
 }  //! namespace tools
 
