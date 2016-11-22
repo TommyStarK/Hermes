@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <stdio.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -15,11 +16,13 @@ namespace netlib {
 
 namespace tools {
 
-#define __BUFFER_SIZE__ 8096
 #define __LOGIC_ERROR__(error) throw std::logic_error(error);
 #define __RUNTIME_ERROR__(error) throw std::runtime_error(error);
 #define __INVALID_ARG__(error) throw std::invalid_argument(error);
 #define __DISPLAY_ERROR__(error) std::cerr << error << std::endl;
+
+static unsigned int const BACKLOG = 100;
+static unsigned int const BUFFER_SIZE = 8096;
 
 }  //! namespace tools
 
@@ -35,14 +38,14 @@ class socket {
   //! ctor
   socket(void)
       : fd_(-1),
-        host_("127.0.0.1"),
-        port_(12345),
+        host_(""),
+        port_(0),
         addrinfo_({0}),
         v_addrinfo_({0}),
         is_socket_bound_(false) {}
 
   //! creates socket from existing fd
-  socket(int fd, const std::string &host, int port)
+  socket(int fd, const std::string &host, unsigned int port)
       : fd_(fd),
         host_(host),
         port_(port),
@@ -57,7 +60,9 @@ class socket {
   socket &operator=(const socket &) = default;
 
   //! dtor
-  ~socket(void) { close(); }
+  ~socket(void) {
+    // close();
+  }
 
  public:
   //!
@@ -65,7 +70,7 @@ class socket {
   //!
 
   //! assigning a name to the socket
-  void bind(const std::string &host, int port) {
+  void bind(const std::string &host, unsigned int port) {
     int yes = 1;
     host_ = host;
     port_ = port;
@@ -81,7 +86,7 @@ class socket {
   }
 
   //! marks the socket as passive socket
-  void listen(int backlog) {
+  void listen(unsigned int backlog) {
     if (not is_socket_bound_)
       __LOGIC_ERROR__(
           "tcp::socket::listen: Socket must be bound before listenning for "
@@ -117,7 +122,7 @@ class socket {
     if (res != 0)
       __RUNTIME_ERROR__("tcp::socket::accept: getnameinfo() failed.");
 
-    return {new_fd, std::string(host), std::stoi(port)};
+    return {new_fd, std::string(host), (unsigned int)std::stoi(port)};
   }
 
   //!
@@ -125,7 +130,7 @@ class socket {
   //!
 
   //! connect to a remote host
-  void connect(const std::string &host, int port) {
+  void connect(const std::string &host, unsigned int port) {
     if (is_socket_bound_)
       __LOGIC_ERROR__(
           "tcp::socket::connect: Trying to connect a socket bound on port: " +
@@ -154,9 +159,12 @@ class socket {
           "tcp::socket::send: Invalid operation. Trying to send data on a non "
           "connected socket.");
 
-    std::size_t res = ::send(fd_, message.data(), message_len, 0);
+    int res = ::send(fd_, message.data(), message_len, 0);
 
-    if (res == -1) __RUNTIME_ERROR__("tcp::socket::send: send() failed.");
+    if (res == -1) {
+      ::perror("Error: ");
+      __RUNTIME_ERROR__("tcp::socket::send: send() failed.");
+    }
     return res;
   }
 
@@ -169,15 +177,16 @@ class socket {
 
     std::vector<char> buffer(size_to_read, 0);
 
-    std::size_t bytes_read =
+    int bytes_read =
         ::recv(fd_, const_cast<char *>(buffer.data()), size_to_read, 0);
 
     switch (bytes_read) {
       case -1:
+        ::perror("error: ");
         __RUNTIME_ERROR__("tcp::socket::receive: recv() failed.");
         break;
       case 0:
-        std::cout << "Connection closed by peer.\n";
+        std::cout << "Connection closed.\n";
         close();
         break;
       default:
@@ -208,7 +217,7 @@ class socket {
   const std::string &get_host() const { return host_; }
 
   //! get the socket port
-  int get_port() const { return port_; }
+  unsigned int get_port() const { return port_; }
 
   //! returns true or false whether the socket is bound
   bool is_socket_bound() const { return is_socket_bound_; }
@@ -230,7 +239,8 @@ class socket {
 
     if (infos) {
       ::memcpy(&addrinfo_, infos, sizeof(*infos));
-      ::freeaddrinfo(infos);
+      // NOTE:  TODO WHY ? find why bytes are not addressable
+      // ::freeaddrinfo(infos);
     }
   }
 
@@ -247,8 +257,10 @@ class socket {
       ::memcpy(&v_addrinfo_, p, sizeof(*p));
       break;
     }
-    if (fd_ == -1)
+    if (fd_ == -1) {
+      ::perror("Error: ");
       __RUNTIME_ERROR__("tcp::socket::create_socket: socket failed().");
+    }
   }
 
  private:
