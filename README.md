@@ -1,2 +1,2 @@
 # Netlib
-A c++ network library based on boost
+A C++11 network library without dependencies
