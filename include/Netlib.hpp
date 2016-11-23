@@ -2,7 +2,6 @@
 
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <stdio.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -161,10 +160,8 @@ class socket {
 
     int res = ::send(fd_, message.data(), message_len, 0);
 
-    if (res == -1) {
-      ::perror("Error: ");
-      __RUNTIME_ERROR__("tcp::socket::send: send() failed.");
-    }
+    if (res == -1) __RUNTIME_ERROR__("tcp::socket::send: send() failed.");
+
     return res;
   }
 
@@ -182,7 +179,6 @@ class socket {
 
     switch (bytes_read) {
       case -1:
-        ::perror("error: ");
         __RUNTIME_ERROR__("tcp::socket::receive: recv() failed.");
         break;
       case 0:
@@ -239,6 +235,7 @@ class socket {
 
     if (infos) {
       ::memcpy(&addrinfo_, infos, sizeof(*infos));
+
       // NOTE:  TODO WHY ? find why bytes are not addressable
       // ::freeaddrinfo(infos);
     }
@@ -249,18 +246,15 @@ class socket {
     if (fd_ != -1) return;
 
     for (auto p = &addrinfo_; p != NULL; p = p->ai_next) {
-      if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) ==
-          -1) {
-        __DISPLAY_ERROR__("failed to create socket ...");
+      if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
         continue;
-      }
+
       ::memcpy(&v_addrinfo_, p, sizeof(*p));
       break;
     }
-    if (fd_ == -1) {
-      ::perror("Error: ");
+
+    if (fd_ == -1)
       __RUNTIME_ERROR__("tcp::socket::create_socket: socket failed().");
-    }
   }
 
  private:
