@@ -93,10 +93,10 @@ class socket {
   //! marks the socket as passive socket
   void listen(unsigned int backlog) {
     if (not is_socket_bound_) {
-      close();
-      __LOGIC_ERROR__(
+      __DISPLAY_ERROR__(
           "tcp::socket::listen: Socket must be bound before listenning for "
           "incoming connections.");
+      return ;
     }
     
     if (backlog > SOMAXCONN)
@@ -145,11 +145,11 @@ class socket {
   //! connect to a remote host
   void connect(const std::string &host, unsigned int port) {
     if (is_socket_bound_) {
-      close();
-      __LOGIC_ERROR__(
+      __DISPLAY_ERROR__(
           "tcp::socket::connect: Trying to connect a socket bound on port: " +
           std::to_string(port_) +
           ". Invalid operation for a socket planned for a server application.");
+      return ;
     }
     
     host_ = host;
