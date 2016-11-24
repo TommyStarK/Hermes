@@ -76,21 +76,29 @@ class socket {
     get_addr_info();
     create_socket();
 
-    if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+    if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+      close();
       __RUNTIME_ERROR__("tcp::socket::bind: setsockopt() failed.");
+    }
 
-    if (::bind(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1)
+
+    if (::bind(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1) {
+      close();
       __RUNTIME_ERROR__("tcp::socket::bind: bind() failed.");
+    }
+      
     is_socket_bound_ = true;
   }
 
   //! marks the socket as passive socket
   void listen(unsigned int backlog) {
-    if (not is_socket_bound_)
+    if (not is_socket_bound_) {
+      close();
       __LOGIC_ERROR__(
           "tcp::socket::listen: Socket must be bound before listenning for "
           "incoming connections.");
-
+    }
+    
     if (backlog > SOMAXCONN)
       __DISPLAY_ERROR__(
           "tcp::socket::listen: Param backlog greater than "
@@ -98,8 +106,11 @@ class socket {
           "refer to the value in /proc/sys/net/core/somaxconn. Param backlog "
           "will be truncated.");
 
-    if (::listen(fd_, backlog) == -1)
+    if (::listen(fd_, backlog) == -1) {
+      close();
       __RUNTIME_ERROR__("tcp::socket::listen: listen() failed.");
+    }
+
   }
 
   //! accepts an incoming connection
@@ -113,14 +124,17 @@ class socket {
     int new_fd = ::accept(fd_, (struct sockaddr *)&client, &size);
 
     if (new_fd == -1)
-      __RUNTIME_ERROR__("tcp::socket::accpet: accept() failed.");
+      __RUNTIME_ERROR__("tcp::socket::accept: accept() failed.");
 
     int res = getnameinfo((struct sockaddr *)&client, size, host, sizeof(host),
                           port, sizeof(port), NI_NUMERICHOST | NI_NUMERICSERV);
 
-    if (res != 0)
+    if (res != 0) {
+      close();
       __RUNTIME_ERROR__("tcp::socket::accept: getnameinfo() failed.");
 
+    }
+    
     return {new_fd, std::string(host), (unsigned int)std::stoi(port)};
   }
 
@@ -130,19 +144,24 @@ class socket {
 
   //! connect to a remote host
   void connect(const std::string &host, unsigned int port) {
-    if (is_socket_bound_)
+    if (is_socket_bound_) {
+      close();
       __LOGIC_ERROR__(
           "tcp::socket::connect: Trying to connect a socket bound on port: " +
           std::to_string(port_) +
           ". Invalid operation for a socket planned for a server application.");
-
+    }
+    
     host_ = host;
     port_ = port;
     get_addr_info();
     create_socket();
 
-    if (::connect(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1)
+    if (::connect(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1) {
+      close();
       __RUNTIME_ERROR__("tcp::socket::connect: connect() failed.");
+
+    }
   }
 
   //! send amount of data
@@ -160,7 +179,10 @@ class socket {
 
     int res = ::send(fd_, message.data(), message_len, 0);
 
-    if (res == -1) __RUNTIME_ERROR__("tcp::socket::send: send() failed.");
+    if (res == -1) {
+      close();
+      __RUNTIME_ERROR__("tcp::socket::send: send() failed.");
+    }
 
     return res;
   }
@@ -179,11 +201,11 @@ class socket {
 
     switch (bytes_read) {
       case -1:
+	close();
         __RUNTIME_ERROR__("tcp::socket::receive: recv() failed.");
-        break;
       case 0:
-        std::cout << "Connection closed.\n";
         close();
+        std::cout << "Connection closed.\n";
         break;
       default:
         break;
