@@ -20,10 +20,13 @@ namespace tools {
 #define __INVALID_ARG__(error) throw std::invalid_argument(error);
 #define __DISPLAY_ERROR__(error) std::cerr << error << std::endl;
 
+// default size for the maximum length to which the queue for pending
+// connections for a socket listening may grow
 static unsigned int const BACKLOG = 100;
+// default size used for buffers
 static unsigned int const BUFFER_SIZE = 8096;
 
-}  //! namespace tools
+}  // namespace tools
 
 namespace network {
 
@@ -34,7 +37,7 @@ namespace tcp {
 // socket
 class socket {
  public:
-  //! ctor
+  // ctor
   socket(void)
       : fd_(-1),
         host_(""),
@@ -43,7 +46,7 @@ class socket {
         v_addrinfo_({0}),
         is_socket_bound_(false) {}
 
-  //! creates socket from existing fd
+  // create socket from existing fd
   socket(int fd, const std::string &host, unsigned int port)
       : fd_(fd),
         host_(host),
@@ -52,23 +55,24 @@ class socket {
         v_addrinfo_({0}),
         is_socket_bound_(false) {}
 
-  //! copy ctor
+  // copy ctor
   socket(const socket &) = default;
 
-  //! assignment operator
+  // assignment operator
   socket &operator=(const socket &) = default;
 
-  //! dtor
-  ~socket(void) {
-    // close();
-  }
+  // operator ==
+  bool operator==(const socket &s) const { return fd_ == s.get_fd(); }
+
+  // dtor
+  ~socket(void) {}
 
  public:
-  //!
-  //! server operations
-  //!
+  //
+  // server operations
+  //
 
-  //! assigning a name to the socket
+  // assign a name to the socket
   void bind(const std::string &host, unsigned int port) {
     int yes = 1;
     host_ = host;
@@ -76,29 +80,25 @@ class socket {
     get_addr_info();
     create_socket();
 
-    if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
-      close();
+    if (is_socket_bound_)
+      __LOGIC_ERROR__("tcp::socket::bind: socket already bound to" + host_ +
+                      ":" + std::to_string(port_));
+
+    if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
       __RUNTIME_ERROR__("tcp::socket::bind: setsockopt() failed.");
-    }
 
-
-    if (::bind(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1) {
-      close();
+    if (::bind(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1)
       __RUNTIME_ERROR__("tcp::socket::bind: bind() failed.");
-    }
-      
     is_socket_bound_ = true;
   }
 
-  //! marks the socket as passive socket
-  void listen(unsigned int backlog) {
-    if (not is_socket_bound_) {
-      __DISPLAY_ERROR__(
-          "tcp::socket::listen: Socket must be bound before listenning for "
+  // mark the socket as passive socket
+  void listen(unsigned int backlog = tools::BACKLOG) {
+    if (not is_socket_bound_)
+      __LOGIC_ERROR__(
+          "tcp::socket::listen: Socket must be bound before listening for "
           "incoming connections.");
-      return ;
-    }
-    
+
     if (backlog > SOMAXCONN)
       __DISPLAY_ERROR__(
           "tcp::socket::listen: Param backlog greater than "
@@ -106,14 +106,11 @@ class socket {
           "refer to the value in /proc/sys/net/core/somaxconn. Param backlog "
           "will be truncated.");
 
-    if (::listen(fd_, backlog) == -1) {
-      close();
+    if (::listen(fd_, backlog) == -1)
       __RUNTIME_ERROR__("tcp::socket::listen: listen() failed.");
-    }
-
   }
 
-  //! accepts an incoming connection
+  // accept an incoming connection
   tcp::socket accept(void) {
     socklen_t size;
     char host[NI_MAXHOST];
@@ -124,53 +121,45 @@ class socket {
     int new_fd = ::accept(fd_, (struct sockaddr *)&client, &size);
 
     if (new_fd == -1)
-      __RUNTIME_ERROR__("tcp::socket::accept: accept() failed.");
+      __RUNTIME_ERROR__("tcp::socket::accpet: accept() failed.");
 
     int res = getnameinfo((struct sockaddr *)&client, size, host, sizeof(host),
                           port, sizeof(port), NI_NUMERICHOST | NI_NUMERICSERV);
 
-    if (res != 0) {
-      close();
+    if (res != 0)
       __RUNTIME_ERROR__("tcp::socket::accept: getnameinfo() failed.");
 
-    }
-    
     return {new_fd, std::string(host), (unsigned int)std::stoi(port)};
   }
 
-  //!
-  //! client operations
-  //!
+  //
+  // client operations
+  //
 
-  //! connect to a remote host
+  // connect to a remote host
   void connect(const std::string &host, unsigned int port) {
-    if (is_socket_bound_) {
-      __DISPLAY_ERROR__(
+    if (is_socket_bound_)
+      __LOGIC_ERROR__(
           "tcp::socket::connect: Trying to connect a socket bound on port: " +
           std::to_string(port_) +
           ". Invalid operation for a socket planned for a server application.");
-      return ;
-    }
-    
+
     host_ = host;
     port_ = port;
     get_addr_info();
     create_socket();
 
-    if (::connect(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1) {
-      close();
+    if (::connect(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1)
       __RUNTIME_ERROR__("tcp::socket::connect: connect() failed.");
-
-    }
   }
 
-  //! send amount of data
+  // send amount of data
   std::size_t send(const std::string &message) {
     return send(std::vector<char>(message.begin(), message.end()),
                 message.size());
   }
 
-  //! send amount of data
+  // send amount of data
   std::size_t send(const std::vector<char> &message, std::size_t message_len) {
     if (fd_ == -1)
       __LOGIC_ERROR__(
@@ -179,16 +168,13 @@ class socket {
 
     int res = ::send(fd_, message.data(), message_len, 0);
 
-    if (res == -1) {
-      close();
-      __RUNTIME_ERROR__("tcp::socket::send: send() failed.");
-    }
+    if (res == -1) __RUNTIME_ERROR__("tcp::socket::send: send() failed.");
 
     return res;
   }
 
-  //! receive amount of data
-  std::vector<char> receive(std::size_t size_to_read) {
+  // receive amount of data
+  std::vector<char> receive(std::size_t size_to_read = tools::BUFFER_SIZE) {
     if (fd_ == -1)
       __LOGIC_ERROR__(
           "tcp::socket::send: Invalid operation. Trying to receive data on a "
@@ -201,11 +187,11 @@ class socket {
 
     switch (bytes_read) {
       case -1:
-	close();
         __RUNTIME_ERROR__("tcp::socket::receive: recv() failed.");
+        break;
       case 0:
-        close();
         std::cout << "Connection closed.\n";
+        close();
         break;
       default:
         break;
@@ -214,11 +200,11 @@ class socket {
     return buffer;
   }
 
-  //!
-  //! common operation
-  //!
+  //
+  // common operation
+  //
 
-  //! close filedescriptor associated to the socket
+  // close filedescriptor associated to the socket
   void close(void) {
     if (fd_ != -1) {
       if (::close(fd_) == -1)
@@ -228,20 +214,20 @@ class socket {
   }
 
  public:
-  //! get filedescriptor associated to the socket
+  // get filedescriptor associated to the socket
   int get_fd() const { return fd_; }
 
-  //! get the socket adress
+  // get the socket adress
   const std::string &get_host() const { return host_; }
 
-  //! get the socket port
+  // get the socket port
   unsigned int get_port() const { return port_; }
 
-  //! returns true or false whether the socket is bound
+  // returns true or false whether the socket is bound
   bool is_socket_bound() const { return is_socket_bound_; }
 
  private:
-  //! retrieve address informations
+  // retrieve address informations
   void get_addr_info() {
     int status;
     struct addrinfo hints;
@@ -256,14 +242,14 @@ class socket {
       __RUNTIME_ERROR__("tcp::socket::get_addr_info: getaddrinfo() failed.");
 
     if (infos) {
-      ::memcpy(&addrinfo_, infos, sizeof(*infos));
-
-      // NOTE:  TODO WHY ? find why bytes are not addressable
-      // ::freeaddrinfo(infos);
+      ::memmove(&addrinfo_, infos, sizeof(*infos));
+      // NOTE TODO: When using valgrind, got error:
+      // points to unadressable bytes - 576 bytes
+      //::freeaddrinfo(infos);
     }
   }
 
-  //! creates an endpoint for communication
+  // create an endpoint for communication
   void create_socket() {
     if (fd_ != -1) return;
 
@@ -280,25 +266,25 @@ class socket {
   }
 
  private:
-  //! filedescriptor associated to the socket
+  // filedescriptor associated to the socket
   int fd_;
 
-  //! socket address
+  // socket address
   std::string host_;
 
-  //! socket port
+  // socket port
   int port_;
 
-  //! socket address informations
+  // socket address informations
   struct addrinfo addrinfo_;
 
-  //! valid socket address informations
+  // valid socket address informations
   struct addrinfo v_addrinfo_;
 
-  //! boolean to know if the socket is bound
+  // boolean to know if the socket is bound
   bool is_socket_bound_;
 };
 
-}  //! namespace tcp
-}  //! namespace network
-}  //! namespace netlib
+}  // namespace tcp
+}  // namespace network
+}  // namespace netlib
