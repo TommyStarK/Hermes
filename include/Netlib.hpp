@@ -85,7 +85,7 @@ class workers {
 
  public:
   // Stop the thread pool.
-  void stop() {
+  void stop(void) {
     if (stop_) return;
 
     stop_ = true;
@@ -103,7 +103,7 @@ class workers {
     if (not new_job)
       __LOGIC_ERROR__(
           "tools::workers::enqueue_job: Passing nullptr instead of const "
-          "std::function<void(void)>.");
+          "std::function<void(void)> &.");
 
     std::unique_lock<std::mutex> lock(mutex_job_queue_);
     job_queue_.push(new_job);
@@ -111,7 +111,7 @@ class workers {
   }
 
   // Returns true or false whether workers are working.
-  bool are_working() const { return not stop_; }
+  bool are_working(void) const { return not stop_; }
 
  private:
   // Check the job queue to know if there is a job waiting. If that is the case
@@ -326,20 +326,20 @@ class socket {
 
  public:
   // Returns the filedescriptor associated to the socket.
-  int get_fd() const { return fd_; }
+  int get_fd(void) const { return fd_; }
 
   // Returns the socket address.
-  const std::string &get_host() const { return host_; }
+  const std::string &get_host(void) const { return host_; }
 
   // Returns the socket port.
-  unsigned int get_port() const { return port_; }
+  unsigned int get_port(void) const { return port_; }
 
   // Returns true or false whether the socket is bound.
-  bool is_socket_bound() const { return is_socket_bound_; }
+  bool is_socket_bound(void) const { return is_socket_bound_; }
 
   // Returns a reference on a structure containing address information
   // used by the socket
-  struct addrinfo &get_struct_addrinfo() {
+  struct addrinfo &get_struct_addrinfo(void) {
     return v_addrinfo_;
   }
 
@@ -347,7 +347,7 @@ class socket {
   // With given Internet host and service, get_addr_info() tries to retrieve
   // a list of structures containing each, a network address that matches
   // host and port.
-  void get_addr_info() {
+  void get_addr_info(void) {
     int status;
     struct addrinfo hints;
     struct addrinfo *infos;
@@ -365,7 +365,7 @@ class socket {
   }
 
   // Create an endpoint for communication.
-  void create_socket() {
+  void create_socket(void) {
     if (fd_ != -1) return;
 
     for (auto p = &addrinfo_; p != NULL; p = p->ai_next) {
@@ -405,11 +405,99 @@ class socket {
 
 class socket {
   socket() {}
-  ~socket() {}
+  ~socket() = default;
 };
 
 #endif
 
 }  // namespace tcp
+
+namespace udp {
+
+#ifdef __linux__
+
+class socket {
+ public:
+  socket() {}
+  ~socket() = default;
+};
+
+#elif WINDOWS
+
+class socket {
+ public:
+  socket() {}
+  ~socket() = default;
+};
+
+#endif
+
+}  // namespace udp
+}  // namespace network
+
+template <typename T>
+class events_handler {
+ public:
+  events_handler(void) {}
+  ~events_handler(void) {}
+
+ private:
+  //
+  tools::workers workers_;
+
+  //
+  std::vector<T> sockets_handled_;
+};
+
+static std::shared_ptr<events_handler<network::tcp::socket>>
+    tcp_events_handler_singleton = nullptr;
+
+static std::shared_ptr<events_handler<network::udp::socket>>
+    udp_events_handler_singleton = nullptr;
+
+const std::shared_ptr<events_handler<network::tcp::socket>>
+    &get_tcp_events_handler() {
+  if (not tcp_events_handler_singleton)
+    tcp_events_handler_singleton =
+        std::make_shared<events_handler<network::tcp::socket>>();
+  return tcp_events_handler_singleton;
+}
+
+const std::shared_ptr<events_handler<network::udp::socket>>
+    &get_udp_events_handler() {
+  if (not udp_events_handler_singleton)
+    udp_events_handler_singleton =
+        std::make_shared<events_handler<network::udp::socket>>();
+  return udp_events_handler_singleton;
+}
+
+namespace network {
+
+namespace tcp {
+
+//
+class client {
+ public:
+  client(void) : events_handler_(get_tcp_events_handler()) {}
+  ~client() {}
+
+ private:
+  std::shared_ptr<events_handler<socket>> events_handler_;
+};
+}  // namespace tcp
+
+namespace udp {
+
+//
+class client {
+ public:
+  client(void) : events_handler_(get_udp_events_handler()) {}
+  ~client() {}
+
+ private:
+  std::shared_ptr<events_handler<socket>> events_handler_;
+};
+
+}  // namespace udp
 }  // namespace network
 }  // namespace netlib

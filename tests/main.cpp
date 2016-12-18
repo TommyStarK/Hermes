@@ -9,7 +9,7 @@ using namespace netlib;
 
 // Workers tests
 SCENARIO("testing workers (Thread pool)") {
-  WHEN("testing workers") {
+  WHEN("giving 3 jobs to process") {
     tools::workers workers(3);
 
     REQUIRE(workers.are_working());
@@ -135,4 +135,20 @@ SCENARIO("testing tcp socket: client operations") {
       REQUIRE_NOTHROW(client.join());
     }
   }
+}
+
+// Events handler tests
+SCENARIO("Testing Events handler") {
+  REQUIRE(tcp_events_handler_singleton == nullptr);
+  REQUIRE(udp_events_handler_singleton == nullptr);
+
+  std::shared_ptr<events_handler<network::tcp::socket>> handler;
+
+  handler = get_tcp_events_handler();
+
+  REQUIRE(handler != nullptr);
+
+  network::udp::client client;
+
+  REQUIRE(udp_events_handler_singleton != nullptr);
 }
