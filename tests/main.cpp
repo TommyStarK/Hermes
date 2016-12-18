@@ -1,13 +1,31 @@
 #define CATCH_CONFIG_MAIN
 #include <chrono>
+#include <memory>
 #include <thread>
 #include "Netlib.hpp"
 #include "catch.hpp"
 
 using namespace netlib;
 
+// Workers tests
+SCENARIO("testing workers (Thread pool)") {
+  WHEN("testing workers") {
+    tools::workers workers(3);
+
+    REQUIRE(workers.are_working());
+    workers.enqueue_job([]() { std::cout << "there is  a job\n"; });
+    workers.enqueue_job([]() { std::cout << "and a new one\n"; });
+    workers.enqueue_job([]() { std::cout << "and another again :)\n"; });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    workers.enqueue_job([&workers]() {
+      workers.stop();
+      REQUIRE(not workers.are_working());
+    });
+  }
+}
+
 // TCP socket tests
-SCENARIO("testing tcp socket default ctor") {
+SCENARIO("testing tcp socket default constructor") {
   network::tcp::socket socket;
   network::tcp::socket socket2;
 
@@ -47,9 +65,10 @@ SCENARIO("testing tcp socket: server operations") {
       std::thread server([&socket_for_test]() {
         REQUIRE_NOTHROW(socket_for_test.bind("127.0.0.1", 27017));
         REQUIRE_NOTHROW(socket_for_test.listen());
-        auto client = socket_for_test.accept();
-        REQUIRE((socket_for_test == client) == false);
-        REQUIRE(client.get_fd() != socket_for_test.get_fd());
+        auto client =
+            std::make_shared<network::tcp::socket>(socket_for_test.accept());
+        REQUIRE((socket_for_test == *client) == false);
+        REQUIRE(client->get_fd() != socket_for_test.get_fd());
         REQUIRE_NOTHROW(socket_for_test.close());
       });
 
@@ -75,7 +94,8 @@ SCENARIO("testing tcp socket: client operations") {
       std::thread server([&default_socket]() {
         REQUIRE_NOTHROW(default_socket.bind("127.0.0.1", 27017));
         REQUIRE_NOTHROW(default_socket.listen());
-        auto client = default_socket.accept();
+        auto client =
+            std::make_shared<network::tcp::socket>(default_socket.accept());
         REQUIRE_NOTHROW(default_socket.close());
       });
 
@@ -90,12 +110,13 @@ SCENARIO("testing tcp socket: client operations") {
       REQUIRE_NOTHROW(client.join());
     }
 
-    WHEN("sending/receiving amount of data") {
+    WHEN("sending/receiving data") {
       std::thread server([&default_socket]() {
         REQUIRE_NOTHROW(default_socket.bind("127.0.0.1", 27017));
         REQUIRE_NOTHROW(default_socket.listen());
-        auto client = default_socket.accept();
-        std::string rcv(client.receive().data());
+        auto client =
+            std::make_shared<network::tcp::socket>(default_socket.accept());
+        std::string rcv(client->receive().data());
         REQUIRE(rcv == "test ok :)");
         REQUIRE(rcv.size() == 10);
         REQUIRE_NOTHROW(default_socket.close());

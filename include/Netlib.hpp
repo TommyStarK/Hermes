@@ -1,30 +1,149 @@
 #pragma once
 
+#define WINDOWS _WIN32 || _WIN64
+
+#ifdef __linux__
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#elif WINDOWS
+#include <WinSock2.h>
+#endif
+
+#include <atomic>
+#include <condition_variable>
 #include <cstring>
 #include <iostream>
+#include <memory>
+#include <mutex>
+#include <queue>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace netlib {
 
 namespace tools {
 
-#define __LOGIC_ERROR__(error) throw std::logic_error(error);
-#define __RUNTIME_ERROR__(error) throw std::runtime_error(error);
-#define __INVALID_ARG__(error) throw std::invalid_argument(error);
-#define __DISPLAY_ERROR__(error) std::cerr << error << std::endl;
-
-// default size for the maximum length to which the queue for pending
-// connections for a socket listening may grow
+// Default size for the maximum length to which the queue for pending
+// connections may grow.
 static unsigned int const BACKLOG = 100;
-// default size used for buffers
+// Default size used for buffers.
 static unsigned int const BUFFER_SIZE = 8096;
+// Default number of threads used as 'workers'.
+static unsigned int const THREADS_NBR = std::thread::hardware_concurrency();
+
+// Format the error to provide to the users an understandable output.
+std::string format_error(const std::string &msg) {
+  return std::string("[Netlib ") + std::string(__FILE__) + std::string(":") +
+         std::to_string(__LINE__) + std::string("]\n") +
+         std::string("netlib::") + msg;
+}
+
+// Various defines to report common errors.
+#define __LOGIC_ERROR__(error) throw std::logic_error(format_error(error));
+#define __RUNTIME_ERROR__(error) throw std::runtime_error(format_error(error));
+#define __INVALID_ARG__(error) throw std::invalid_argument(format_error(error));
+#define __DISPLAY_ERROR__(error) std::cerr << format_error(error) << std::endl;
+
+// A thread pool waiting for jobs for concurrent execution.
+// Jobs are enqueued in a synchronized queue. Each worker waits for a job to be
+// enqueued.
+class workers {
+ public:
+  explicit workers(unsigned int workers_nbr = THREADS_NBR) : stop_(false) {
+    // Check the number of concurrent threads supported by the implementation.
+    if (workers_nbr > std::thread::hardware_concurrency())
+      __LOGIC_ERROR__(
+          "tools::workers::constructor: Number of workers is greater than the"
+          "number of concurrent threads supported by the implementation\n.");
+
+    // We start the workers.
+    for (unsigned int i = 0; i < workers_nbr; i++)
+      workers_.push_back(std::thread([this]() {
+        // Worker routine:
+        // Each worker is waiting for a new job. The first worker who can
+        // process a job, removes it from the queue and executes it.
+
+        // We loop waiting for a new job.
+        while (not stop_) {
+          auto job = retrieve_job();
+          if (job) job();
+        }
+
+      }));
+  }
+
+  workers(const workers &) = delete;
+
+  workers &operator=(const workers &) = delete;
+
+  ~workers() { stop(); }
+
+ public:
+  // Stop the thread pool.
+  void stop() {
+    if (stop_) return;
+
+    stop_ = true;
+    // We notify all threads that workers should stop working in order to
+    // join every worker.
+    condition_.notify_all();
+
+    for (auto &worker : workers_) worker.join();
+    workers_.clear();
+  }
+
+  // Allows the user to enqueue a new job which must be processed.
+  // It will notify every threads that a job has been enqueued.
+  void enqueue_job(const std::function<void(void)> &new_job) {
+    if (not new_job)
+      __LOGIC_ERROR__(
+          "tools::workers::enqueue_job: Passing nullptr instead of const "
+          "std::function<void(void)>.");
+
+    std::unique_lock<std::mutex> lock(mutex_job_queue_);
+    job_queue_.push(new_job);
+    condition_.notify_all();
+  }
+
+  // Returns true or false whether workers are working.
+  bool are_working() const { return not stop_; }
+
+ private:
+  // Check the job queue to know if there is a job waiting. If that is the case
+  // it returns the job and removes it from the queue.
+  std::function<void(void)> retrieve_job() {
+    std::unique_lock<std::mutex> lock(mutex_job_queue_);
+
+    condition_.wait(lock, [&] { return stop_ or not job_queue_.empty(); });
+
+    if (job_queue_.empty()) return nullptr;
+
+    auto job = std::move(job_queue_.front());
+    job_queue_.pop();
+    return job;
+  }
+
+ private:
+  // Boolean to know if the workers should stop working.
+  std::atomic_bool stop_;
+
+  // Mutex to synchronize the queue.
+  std::mutex mutex_job_queue_;
+
+  // Condition variable to synchronize the threads.
+  std::condition_variable condition_;
+
+  // Thread pool
+  std::vector<std::thread> workers_;
+
+  // Contains pending job
+  std::queue<std::function<void(void)>> job_queue_;
+};
 
 }  // namespace tools
 
@@ -34,45 +153,37 @@ using namespace tools;
 
 namespace tcp {
 
-// socket
+#ifdef __linux__
+
 class socket {
  public:
-  // ctor
-  socket(void)
-      : fd_(-1),
-        host_(""),
-        port_(0),
-        addrinfo_({0}),
-        v_addrinfo_({0}),
-        is_socket_bound_(false) {}
+  socket(void) : fd_(-1), host_(""), port_(0), is_socket_bound_(false) {}
 
-  // create socket from existing fd
+  // Create a socket from an existing filedescriptor.
   socket(int fd, const std::string &host, unsigned int port)
-      : fd_(fd),
-        host_(host),
-        port_(port),
-        addrinfo_({0}),
-        v_addrinfo_({0}),
+      : fd_(fd), host_(host), port_(port), is_socket_bound_(false) {}
+
+  socket(socket &&socket)
+      : fd_(std::move(socket.get_fd())),
+        host_(socket.get_host()),
+        port_(socket.get_port()),
+        v_addrinfo_(std::move(socket.get_struct_addrinfo())),
         is_socket_bound_(false) {}
 
-  // copy ctor
-  socket(const socket &) = default;
+  socket(const socket &) = delete;
 
-  // assignment operator
-  socket &operator=(const socket &) = default;
+  socket &operator=(const socket &) = delete;
 
-  // operator ==
   bool operator==(const socket &s) const { return fd_ == s.get_fd(); }
 
-  // dtor
-  ~socket(void) {}
+  ~socket(void) = default;
 
  public:
   //
-  // server operations
+  // Server operations.
   //
 
-  // assign a name to the socket
+  // Assign a name to the socket.
   void bind(const std::string &host, unsigned int port) {
     int yes = 1;
     host_ = host;
@@ -92,7 +203,7 @@ class socket {
     is_socket_bound_ = true;
   }
 
-  // mark the socket as passive socket
+  // Mark the socket as passive socket.
   void listen(unsigned int backlog = tools::BACKLOG) {
     if (not is_socket_bound_)
       __LOGIC_ERROR__(
@@ -110,7 +221,7 @@ class socket {
       __RUNTIME_ERROR__("tcp::socket::listen: listen() failed.");
   }
 
-  // accept an incoming connection
+  // Accept a new connection.
   tcp::socket accept(void) {
     socklen_t size;
     char host[NI_MAXHOST];
@@ -133,10 +244,10 @@ class socket {
   }
 
   //
-  // client operations
+  // Client operations.
   //
 
-  // connect to a remote host
+  // Connect to a remote host.
   void connect(const std::string &host, unsigned int port) {
     if (is_socket_bound_)
       __LOGIC_ERROR__(
@@ -153,13 +264,13 @@ class socket {
       __RUNTIME_ERROR__("tcp::socket::connect: connect() failed.");
   }
 
-  // send amount of data
+  // Send data.
   std::size_t send(const std::string &message) {
     return send(std::vector<char>(message.begin(), message.end()),
                 message.size());
   }
 
-  // send amount of data
+  // Send data.
   std::size_t send(const std::vector<char> &message, std::size_t message_len) {
     if (fd_ == -1)
       __LOGIC_ERROR__(
@@ -173,7 +284,7 @@ class socket {
     return res;
   }
 
-  // receive amount of data
+  // Receive data.
   std::vector<char> receive(std::size_t size_to_read = tools::BUFFER_SIZE) {
     if (fd_ == -1)
       __LOGIC_ERROR__(
@@ -201,10 +312,10 @@ class socket {
   }
 
   //
-  // common operation
+  // Common operation.
   //
 
-  // close filedescriptor associated to the socket
+  // Close the filedescriptor associated to the socket
   void close(void) {
     if (fd_ != -1) {
       if (::close(fd_) == -1)
@@ -214,26 +325,35 @@ class socket {
   }
 
  public:
-  // get filedescriptor associated to the socket
+  // Returns the filedescriptor associated to the socket.
   int get_fd() const { return fd_; }
 
-  // get the socket adress
+  // Returns the socket address.
   const std::string &get_host() const { return host_; }
 
-  // get the socket port
+  // Returns the socket port.
   unsigned int get_port() const { return port_; }
 
-  // returns true or false whether the socket is bound
+  // Returns true or false whether the socket is bound.
   bool is_socket_bound() const { return is_socket_bound_; }
 
+  // Returns a reference on a structure containing address information
+  // used by the socket
+  struct addrinfo &get_struct_addrinfo() {
+    return v_addrinfo_;
+  }
+
  private:
-  // retrieve address informations
+  // With given Internet host and service, get_addr_info() tries to retrieve
+  // a list of structures containing each, a network address that matches
+  // host and port.
   void get_addr_info() {
     int status;
     struct addrinfo hints;
     struct addrinfo *infos;
 
     ::memset(&hints, 0, sizeof(hints));
+    ::memset(&addrinfo_, 0, sizeof(addrinfo_));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
@@ -241,15 +361,10 @@ class socket {
                                 &hints, &infos)) != 0)
       __RUNTIME_ERROR__("tcp::socket::get_addr_info: getaddrinfo() failed.");
 
-    if (infos) {
-      ::memmove(&addrinfo_, infos, sizeof(*infos));
-      // NOTE TODO: When using valgrind, got error:
-      // points to unadressable bytes - 576 bytes
-      //::freeaddrinfo(infos);
-    }
+    if (infos) ::memmove(&addrinfo_, infos, sizeof(*infos));
   }
 
-  // create an endpoint for communication
+  // Create an endpoint for communication.
   void create_socket() {
     if (fd_ != -1) return;
 
@@ -257,6 +372,7 @@ class socket {
       if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
         continue;
 
+      ::memset(&v_addrinfo_, 0, sizeof(*p));
       ::memcpy(&v_addrinfo_, p, sizeof(*p));
       break;
     }
@@ -266,24 +382,33 @@ class socket {
   }
 
  private:
-  // filedescriptor associated to the socket
+  // Filedescriptor associated to the socket.
   int fd_;
 
-  // socket address
+  // Socket address.
   std::string host_;
 
-  // socket port
+  // Socket port.
   int port_;
 
-  // socket address informations
+  // List of structures containing a network address.
   struct addrinfo addrinfo_;
 
-  // valid socket address informations
+  // Network address used by the socket.
   struct addrinfo v_addrinfo_;
 
-  // boolean to know if the socket is bound
+  // Boolean to know if the socket is bound.
   bool is_socket_bound_;
 };
+
+#elif WINDOWS
+
+class socket {
+  socket() {}
+  ~socket() {}
+};
+
+#endif
 
 }  // namespace tcp
 }  // namespace network
