@@ -137,18 +137,19 @@ SCENARIO("testing tcp socket: client operations") {
   }
 }
 
-// Events handler tests
-SCENARIO("Testing Events handler") {
-  REQUIRE(tcp_events_handler_singleton == nullptr);
-  REQUIRE(udp_events_handler_singleton == nullptr);
+// Events watcher tests
+SCENARIO("Testing Events watcher") {
+  REQUIRE(events_watcher_singleton == nullptr);
+  std::shared_ptr<events_watcher> watcher;
+  watcher = get_events_watcher();
+  REQUIRE(watcher != nullptr);
 
-  std::shared_ptr<events_handler<network::tcp::socket>> handler;
+  network::tcp::socket socket;
+  REQUIRE(watcher->is_an_event_registered<network::tcp::socket>(socket) ==
+          false);
 
-  handler = get_tcp_events_handler();
+  watcher->watch<network::tcp::socket>(socket);
 
-  REQUIRE(handler != nullptr);
-
-  network::udp::client client;
-
-  REQUIRE(udp_events_handler_singleton != nullptr);
+  REQUIRE(watcher->is_an_event_registered<network::tcp::socket>(socket) ==
+          true);
 }

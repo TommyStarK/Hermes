@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace netlib {
@@ -406,6 +407,8 @@ class socket {
 class socket {
   socket() {}
   ~socket() = default;
+  int fd_;
+  int get_fd() const { return fd_; }
 };
 
 #endif
@@ -420,6 +423,8 @@ class socket {
  public:
   socket() {}
   ~socket() = default;
+  int fd_;
+  int get_fd() const { return fd_; }
 };
 
 #elif WINDOWS
@@ -428,6 +433,8 @@ class socket {
  public:
   socket() {}
   ~socket() = default;
+  int fd_;
+  int get_fd() const { return fd_; }
 };
 
 #endif
@@ -435,40 +442,91 @@ class socket {
 }  // namespace udp
 }  // namespace network
 
-template <typename T>
-class events_handler {
+//
+class event {
  public:
-  events_handler(void) {}
-  ~events_handler(void) {}
+  //
+  event(void)
+      : unwatch_(false),
+        is_executing_send_callback_(false),
+        is_executing_receive_callback_(false),
+        send_callback_(nullptr),
+        receive_callback_(nullptr) {}
+
+  ~event(void) = default;
+
+ public:
+  //
+  std::atomic_bool unwatch_;
+
+  //
+  std::atomic_bool is_executing_send_callback_;
+
+  //
+  std::atomic_bool is_executing_receive_callback_;
+
+  //
+  std::function<void(void)> send_callback_;
+
+  //
+  std::function<void(void)> receive_callback_;
+};
+
+//
+class events_watcher {
+ public:
+  events_watcher(void) : stop_(false) {}
+
+  // events_watcher(const events_watcher &) = delete;
+  //
+  // events_watcher &operator=(const events_watcher &) = delete;
+
+  ~events_watcher(void) {}
+
+ public:
+  //
+  bool is_watching() const { return not stop_; }
+
+  template <typename T>
+  bool is_an_event_registered(const T &socket) {
+    return events_registered_.find(socket.get_fd()) == events_registered_.end()
+               ? false
+               : true;
+  }
+
+  //
+  template <typename T>
+  void watch(const T &socket) {
+    std::unique_lock<std::mutex> lock(mutex_events);
+
+    auto &new_event = events_registered_[socket.get_fd()];
+    new_event.unwatch_ = false;
+    new_event.is_executing_send_callback_ = false;
+    new_event.is_executing_receive_callback_ = false;
+    new_event.send_callback_ = nullptr;
+    new_event.receive_callback_ = nullptr;
+  }
 
  private:
+  //
+  std::atomic_bool stop_;
+
   //
   tools::workers workers_;
 
   //
-  std::vector<T> sockets_handled_;
+  std::mutex mutex_events;
+
+  //
+  std::unordered_map<int, event> events_registered_;
 };
 
-static std::shared_ptr<events_handler<network::tcp::socket>>
-    tcp_events_handler_singleton = nullptr;
+static std::shared_ptr<events_watcher> events_watcher_singleton = nullptr;
 
-static std::shared_ptr<events_handler<network::udp::socket>>
-    udp_events_handler_singleton = nullptr;
-
-const std::shared_ptr<events_handler<network::tcp::socket>>
-    &get_tcp_events_handler() {
-  if (not tcp_events_handler_singleton)
-    tcp_events_handler_singleton =
-        std::make_shared<events_handler<network::tcp::socket>>();
-  return tcp_events_handler_singleton;
-}
-
-const std::shared_ptr<events_handler<network::udp::socket>>
-    &get_udp_events_handler() {
-  if (not udp_events_handler_singleton)
-    udp_events_handler_singleton =
-        std::make_shared<events_handler<network::udp::socket>>();
-  return udp_events_handler_singleton;
+const std::shared_ptr<events_watcher> &get_events_watcher() {
+  if (not events_watcher_singleton)
+    events_watcher_singleton = std::make_shared<events_watcher>();
+  return events_watcher_singleton;
 }
 
 namespace network {
@@ -478,12 +536,22 @@ namespace tcp {
 //
 class client {
  public:
-  client(void) : events_handler_(get_tcp_events_handler()) {}
-  ~client() {}
+  client(void) : events_watcher_(get_events_watcher()) {}
+  ~client(void) {}
 
  private:
-  std::shared_ptr<events_handler<socket>> events_handler_;
+  std::shared_ptr<events_watcher> events_watcher_;
 };
+
+class server {
+ public:
+  server(void) : events_watcher_(get_events_watcher()) {}
+  ~server(void) {}
+
+ private:
+  std::shared_ptr<events_watcher> events_watcher_;
+};
+
 }  // namespace tcp
 
 namespace udp {
@@ -491,11 +559,20 @@ namespace udp {
 //
 class client {
  public:
-  client(void) : events_handler_(get_udp_events_handler()) {}
+  client(void) : events_watcher_(get_events_watcher()) {}
   ~client() {}
 
  private:
-  std::shared_ptr<events_handler<socket>> events_handler_;
+  std::shared_ptr<events_watcher> events_watcher_;
+};
+
+class server {
+ public:
+  server(void) : events_watcher_(get_events_watcher()) {}
+  ~server(void) {}
+
+ private:
+  std::shared_ptr<events_watcher> events_watcher_;
 };
 
 }  // namespace udp
