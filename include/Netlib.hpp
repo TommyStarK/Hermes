@@ -23,6 +23,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace netlib {
@@ -477,9 +478,9 @@ class events_watcher {
  public:
   events_watcher(void) : stop_(false) {}
 
-  // events_watcher(const events_watcher &) = delete;
-  //
-  // events_watcher &operator=(const events_watcher &) = delete;
+  events_watcher(const events_watcher &) = delete;
+
+  events_watcher &operator=(const events_watcher &) = delete;
 
   ~events_watcher(void) {}
 
@@ -497,7 +498,7 @@ class events_watcher {
   //
   template <typename T>
   void watch(const T &socket) {
-    std::unique_lock<std::mutex> lock(mutex_events);
+    std::unique_lock<std::mutex> lock(mutex_events_);
 
     auto &new_event = events_registered_[socket.get_fd()];
     new_event.unwatch_ = false;
@@ -505,6 +506,45 @@ class events_watcher {
     new_event.is_executing_receive_callback_ = false;
     new_event.send_callback_ = nullptr;
     new_event.receive_callback_ = nullptr;
+  }
+
+  template <typename T>
+  void on_receive_callback(const T &socket,
+                           const std::function<void(void)> &callback) {
+    std::unique_lock<std::mutex> lock(mutex_events_);
+
+    auto &specific_event = events_registered_[socket.get_fd()];
+    specific_event.unwatch_ = false;
+    specific_event.receive_callback_ = callback;
+  }
+
+  template <typename T>
+  void on_send_callback(const T &socket,
+                        const std::function<void(void)> &callback) {
+    std::unique_lock<std::mutex> lock(mutex_events_);
+
+    auto &specific_event = events_registered_[socket.get_fd()];
+    specific_event.unwatch_ = false;
+    specific_event.send_callback_ = callback;
+  }
+
+  template <typename T>
+  void unwatch(const T &socket) {
+    std::unique_lock<std::mutex> lock(mutex_events_);
+
+    if (events_registered_.find(socket.get_fd()) == events_registered_.end())
+      return;
+
+    auto &socket_to_unwatch = events_registered_[socket.get_fd()];
+
+    if (socket_to_unwatch.is_executing_send_callback_ or
+        socket_to_unwatch.is_executing_receive_callback_) {
+      socket_to_unwatch.unwatch_ = true;
+      return;
+    }
+
+    auto iterator = events_registered_.find(socket.get_fd());
+    events_registered_.erase(iterator);
   }
 
  private:
@@ -515,13 +555,17 @@ class events_watcher {
   tools::workers workers_;
 
   //
-  std::mutex mutex_events;
+  std::mutex mutex_events_;
 
   //
   std::unordered_map<int, event> events_registered_;
 };
 
 static std::shared_ptr<events_watcher> events_watcher_singleton = nullptr;
+
+void set_events_watcher(const std::shared_ptr<events_watcher> &watcher) {
+  events_watcher_singleton = watcher;
+}
 
 const std::shared_ptr<events_watcher> &get_events_watcher() {
   if (not events_watcher_singleton)
@@ -536,20 +580,135 @@ namespace tcp {
 //
 class client {
  public:
-  client(void) : events_watcher_(get_events_watcher()) {}
-  ~client(void) {}
+  client(void) : connected_(false), events_watcher_(get_events_watcher()) {}
+
+  client(socket &&socket)
+      : socket_(std::move(socket)),
+        connected_(true),
+        events_watcher_(get_events_watcher()) {
+    events_watcher_->watch<tcp::socket>(socket_);
+  }
+
+  client(const client &) = delete;
+
+  client &operator=(const client &) = delete;
+
+  ~client(void) { disconnect(); }
+
+ public:
+  // Returns true or false whether the client is connected.
+  bool is_connected(void) const { return connected_; }
+
+  // Returns the client's socket.
+  const socket &get_socket() const { return socket_; }
+
+  //
+  void disconnect(void) {
+    if (not connected_) return;
+
+    connected_ = false;
+    events_watcher_->unwatch<tcp::socket>(socket_);
+    socket_.close();
+  }
 
  private:
+  //
+  socket socket_;
+
+  //
+  std::atomic_bool connected_;
+
+  //
   std::shared_ptr<events_watcher> events_watcher_;
 };
 
+//
 class server {
  public:
-  server(void) : events_watcher_(get_events_watcher()) {}
-  ~server(void) {}
+  server(void) : running_(false), events_watcher_(get_events_watcher()) {}
+
+  server(const server &) = delete;
+
+  server &operator=(const server &) = delete;
+
+  ~server(void) { stop(); }
+
+ public:
+  // Returns true or false whether the server is running.
+  bool is_running(void) const { return running_; }
+
+  // This function provides a callback that the server executes on a new
+  // connection.
+  void on_connection(
+      const std::function<void(const std::shared_ptr<client> &)> &callback) {
+    callback_ = callback;
+  }
+
+  // Start the server.
+  void run(const std::string &host, unsigned int port) {
+    if (running_)
+      __LOGIC_ERROR__("tcp::server::run: Server is already running.");
+
+    if (not callback_)
+      __LOGIC_ERROR__(
+          "tcp::server::run: You must provide a callback for a new "
+          "connection.\n Use method on_connection(const std::function<const "
+          "std::shared_ptr<client> &> &callback) before running the server.");
+
+    socket_.bind(host, port);
+    socket_.listen();
+    events_watcher_->watch<tcp::socket>(socket_);
+    events_watcher_->on_receive_callback<tcp::socket>(
+        socket_, std::bind(&server::on_accept, this));
+    running_ = true;
+  }
+
+  // Stop the server.
+  void stop(void) {
+    if (not running_) return;
+
+    std::unique_lock<std::mutex> lock(mutex_);
+    running_ = false;
+    events_watcher_->unwatch<tcp::socket>(socket_);
+    socket_.close();
+    for (auto &client : clients_) client->disconnect();
+    clients_.clear();
+  }
 
  private:
+  // This function is triggered by the events watcher and a client is trying to
+  // connect to our server.
+  void on_accept(void) {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    try {
+      auto new_client = std::make_shared<client>(socket_.accept());
+      if (callback_) callback_(new_client);
+      clients_.insert(new_client);
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+      stop();
+    }
+  }
+
+ private:
+  // Server's socket.
+  socket socket_;
+
+  // A mutex to synchronize the set of clients.
+  std::mutex mutex_;
+
+  // Boolean to know if the server is running.
+  std::atomic_bool running_;
+
+  // A smart pointer on the events watcher.
   std::shared_ptr<events_watcher> events_watcher_;
+
+  // A set of clients connected to our server.
+  std::unordered_set<std::shared_ptr<client>> clients_;
+
+  // A callback executed when a new client is accepted.
+  std::function<void(const std::shared_ptr<client> &)> callback_;
 };
 
 }  // namespace tcp
@@ -563,15 +722,24 @@ class client {
   ~client() {}
 
  private:
+  //
+  socket socket_;
+
+  //
   std::shared_ptr<events_watcher> events_watcher_;
 };
 
+//
 class server {
  public:
   server(void) : events_watcher_(get_events_watcher()) {}
   ~server(void) {}
 
  private:
+  //
+  socket socket_;
+
+  //
   std::shared_ptr<events_watcher> events_watcher_;
 };
 

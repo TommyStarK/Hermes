@@ -6,16 +6,19 @@
 #include "catch.hpp"
 
 using namespace netlib;
+using namespace netlib::network;
 
-// Workers tests
+//
+// Workers tests section
+//
 SCENARIO("testing workers (Thread pool)") {
   WHEN("giving 3 jobs to process") {
-    tools::workers workers(3);
+    netlib::tools::workers workers(3);
 
     REQUIRE(workers.are_working());
-    workers.enqueue_job([]() { std::cout << "there is  a job\n"; });
-    workers.enqueue_job([]() { std::cout << "and a new one\n"; });
-    workers.enqueue_job([]() { std::cout << "and another again :)\n"; });
+    workers.enqueue_job([]() {});
+    workers.enqueue_job([]() {});
+    workers.enqueue_job([]() {});
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     workers.enqueue_job([&workers]() {
       workers.stop();
@@ -24,10 +27,12 @@ SCENARIO("testing workers (Thread pool)") {
   }
 }
 
-// TCP socket tests
+//
+// TCP socket tests sections
+//
 SCENARIO("testing tcp socket default constructor") {
-  network::tcp::socket socket;
-  network::tcp::socket socket2;
+  tcp::socket socket;
+  tcp::socket socket2;
 
   REQUIRE(socket.get_fd() == -1);
   REQUIRE(socket.get_host() == "");
@@ -37,8 +42,8 @@ SCENARIO("testing tcp socket default constructor") {
 
 SCENARIO("testing tcp socket: server operations") {
   GIVEN("default tcp sockets") {
-    network::tcp::socket default_socket;
-    network::tcp::socket socket_for_test;
+    tcp::socket default_socket;
+    tcp::socket socket_for_test;
 
     WHEN("assigning a name to the socket (bind)") {
       REQUIRE(socket_for_test == default_socket);
@@ -65,8 +70,7 @@ SCENARIO("testing tcp socket: server operations") {
       std::thread server([&socket_for_test]() {
         REQUIRE_NOTHROW(socket_for_test.bind("127.0.0.1", 27017));
         REQUIRE_NOTHROW(socket_for_test.listen());
-        auto client =
-            std::make_shared<network::tcp::socket>(socket_for_test.accept());
+        auto client = std::make_shared<tcp::socket>(socket_for_test.accept());
         REQUIRE((socket_for_test == *client) == false);
         REQUIRE(client->get_fd() != socket_for_test.get_fd());
         REQUIRE_NOTHROW(socket_for_test.close());
@@ -87,15 +91,14 @@ SCENARIO("testing tcp socket: server operations") {
 
 SCENARIO("testing tcp socket: client operations") {
   GIVEN("default tcp sockets") {
-    network::tcp::socket default_socket;
-    network::tcp::socket socket_for_test;
+    tcp::socket default_socket;
+    tcp::socket socket_for_test;
 
     WHEN("connecting to the given endpoint") {
       std::thread server([&default_socket]() {
         REQUIRE_NOTHROW(default_socket.bind("127.0.0.1", 27017));
         REQUIRE_NOTHROW(default_socket.listen());
-        auto client =
-            std::make_shared<network::tcp::socket>(default_socket.accept());
+        auto client = std::make_shared<tcp::socket>(default_socket.accept());
         REQUIRE_NOTHROW(default_socket.close());
       });
 
@@ -114,8 +117,7 @@ SCENARIO("testing tcp socket: client operations") {
       std::thread server([&default_socket]() {
         REQUIRE_NOTHROW(default_socket.bind("127.0.0.1", 27017));
         REQUIRE_NOTHROW(default_socket.listen());
-        auto client =
-            std::make_shared<network::tcp::socket>(default_socket.accept());
+        auto client = std::make_shared<tcp::socket>(default_socket.accept());
         std::string rcv(client->receive().data());
         REQUIRE(rcv == "test ok :)");
         REQUIRE(rcv.size() == 10);
@@ -137,19 +139,59 @@ SCENARIO("testing tcp socket: client operations") {
   }
 }
 
-// Events watcher tests
-SCENARIO("Testing Events watcher") {
-  REQUIRE(events_watcher_singleton == nullptr);
-  std::shared_ptr<events_watcher> watcher;
-  watcher = get_events_watcher();
-  REQUIRE(watcher != nullptr);
+//
+// TCP client tests section
+//
+SCENARIO("testing tcp client") {
+  WHEN("using default constructor and move constructor") {
+    tcp::client client;
+    std::shared_ptr<events_watcher> watcher;
+    watcher = get_events_watcher();
 
-  network::tcp::socket socket;
-  REQUIRE(watcher->is_an_event_registered<network::tcp::socket>(socket) ==
-          false);
+    REQUIRE(not client.is_connected());
+    REQUIRE(
+        not watcher->is_an_event_registered<tcp::socket>(client.get_socket()));
 
-  watcher->watch<network::tcp::socket>(socket);
+    tcp::socket socket;
+    tcp::client new_client(std::move(socket));
 
-  REQUIRE(watcher->is_an_event_registered<network::tcp::socket>(socket) ==
-          true);
+    REQUIRE(new_client.is_connected());
+    REQUIRE(
+        watcher->is_an_event_registered<tcp::socket>(new_client.get_socket()));
+    set_events_watcher(nullptr);
+  }
+}
+
+//
+// TCP server tests section
+//
+SCENARIO("testing tcp server") {
+  WHEN("constructing a tcp server") {
+    tcp::server server;
+
+    REQUIRE(not server.is_running());
+    set_events_watcher(nullptr);
+  }
+}
+
+//
+// Events watcher tests section
+//
+SCENARIO("testing events watcher") {
+  WHEN("testing basic features") {
+    REQUIRE(events_watcher_singleton == nullptr);
+    std::shared_ptr<events_watcher> watcher;
+    watcher = get_events_watcher();
+    REQUIRE(watcher != nullptr);
+
+    tcp::socket socket;
+    REQUIRE(watcher->is_an_event_registered<tcp::socket>(socket) == false);
+
+    watcher->watch<tcp::socket>(socket);
+
+    REQUIRE(watcher->is_an_event_registered<tcp::socket>(socket) == true);
+
+    watcher->unwatch<tcp::socket>(socket);
+    REQUIRE(watcher->is_an_event_registered<tcp::socket>(socket) == false);
+  }
 }
