@@ -1,5 +1,5 @@
 
-# Netlib    [![Build Status](https://travis-ci.org/TommyStarK/Netlib.svg?branch=master)](https://travis-ci.org/TommyStarK/Netlib)
+# Netlib    [![Build Status](https://travis-ci.org/TommyStarK/Netlib.svg?branch=master)](https://travis-ci.org/TommyStarK/Netlib) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 A cross-platform C++11 network library without dependencies.
 

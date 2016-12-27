@@ -1,6 +1,6 @@
 #pragma once
 
-#define WINDOWS _WIN32 || _WIN64
+#define __windows__ _WIN32 || _WIN64
 
 #ifdef __linux__
 #include <arpa/inet.h>
@@ -8,7 +8,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#elif WINDOWS
+#elif __windows__
 #include <WinSock2.h>
 #endif
 
@@ -35,14 +35,14 @@ namespace tools {
 static unsigned int const BACKLOG = 100;
 // Default size used for buffers.
 static unsigned int const BUFFER_SIZE = 8096;
-// Default number of threads used as 'workers'.
+// Default number of concurrent threads supported by the system.
+// Threads are used as 'workers'.
 static unsigned int const THREADS_NBR = std::thread::hardware_concurrency();
 
-// Format the error to provide to the users an understandable output.
+// Format the error to provide an understandable output.
 std::string format_error(const std::string &msg) {
   return std::string("[Netlib ") + std::string(__FILE__) + std::string(":") +
-         std::to_string(__LINE__) + std::string("]\n") +
-         std::string("netlib::") + msg;
+         std::to_string(__LINE__) + std::string("]\n") + msg;
 }
 
 // Various defines to report common errors.
@@ -52,19 +52,18 @@ std::string format_error(const std::string &msg) {
 #define __DISPLAY_ERROR__(error) std::cerr << format_error(error) << std::endl;
 
 // A thread pool waiting for jobs for concurrent execution.
-// Jobs are enqueued in a synchronized queue. Each worker waits for a job to be
-// enqueued.
+// Jobs are enqueued in a synchronized queue. Each worker is waiting for job.
 class workers {
  public:
   explicit workers(unsigned int workers_nbr = THREADS_NBR) : stop_(false) {
-    // Check the number of concurrent threads supported by the implementation.
+    // Check the number of concurrent threads supported by the system.
     if (workers_nbr > std::thread::hardware_concurrency())
       __LOGIC_ERROR__(
           "tools::workers::constructor: Number of workers is greater than the"
           "number of concurrent threads supported by the implementation\n.");
 
     // We start the workers.
-    for (unsigned int i = 0; i < workers_nbr; i++)
+    for (unsigned int i = 0; i < workers_nbr; ++i)
       workers_.push_back(std::thread([this]() {
         // Worker routine:
         // Each worker is waiting for a new job. The first worker who can
@@ -159,18 +158,23 @@ namespace tcp {
 
 class socket {
  public:
+  // Basic constructor.
   socket(void) : fd_(-1), host_(""), port_(0), is_socket_bound_(false) {}
 
-  // Create a socket from an existing filedescriptor.
+  // Create a socket from an existing file descriptor.
   socket(int fd, const std::string &host, unsigned int port)
       : fd_(fd), host_(host), port_(port), is_socket_bound_(false) {}
 
+  // A move constructor has been implemented allowing to construct a socket
+  // from a rvalue of an existing socket.
   socket(socket &&socket)
       : fd_(std::move(socket.get_fd())),
         host_(socket.get_host()),
         port_(socket.get_port()),
         v_addrinfo_(std::move(socket.get_struct_addrinfo())),
-        is_socket_bound_(false) {}
+        is_socket_bound_(false) {
+    socket.fd_ = -1;
+  }
 
   socket(const socket &) = delete;
 
@@ -317,7 +321,7 @@ class socket {
   // Common operation.
   //
 
-  // Close the filedescriptor associated to the socket
+  // Close the file descriptor associated to the socket.
   void close(void) {
     if (fd_ != -1) {
       if (::close(fd_) == -1)
@@ -327,7 +331,7 @@ class socket {
   }
 
  public:
-  // Returns the filedescriptor associated to the socket.
+  // Returns the file descriptor associated to the socket.
   int get_fd(void) const { return fd_; }
 
   // Returns the socket address.
@@ -339,8 +343,8 @@ class socket {
   // Returns true or false whether the socket is bound.
   bool is_socket_bound(void) const { return is_socket_bound_; }
 
-  // Returns a reference on a structure containing address information
-  // used by the socket
+  // Returns a reference on a structure containing a network address used by the
+  // socket.
   struct addrinfo &get_struct_addrinfo(void) {
     return v_addrinfo_;
   }
@@ -384,7 +388,7 @@ class socket {
   }
 
  private:
-  // Filedescriptor associated to the socket.
+  // file descriptor associated to the socket.
   int fd_;
 
   // Socket address.
@@ -393,7 +397,7 @@ class socket {
   // Socket port.
   int port_;
 
-  // List of structures containing a network address.
+  // List of structures containing each, a network address.
   struct addrinfo addrinfo_;
 
   // Network address used by the socket.
@@ -403,7 +407,7 @@ class socket {
   bool is_socket_bound_;
 };
 
-#elif WINDOWS
+#elif __windows__
 
 class socket {
   socket() {}
@@ -428,7 +432,7 @@ class socket {
   int get_fd() const { return fd_; }
 };
 
-#elif WINDOWS
+#elif __windows__
 
 class socket {
  public:
@@ -443,10 +447,9 @@ class socket {
 }  // namespace udp
 }  // namespace network
 
-//
+// Represents an expected event for a file descriptor.
 class event {
  public:
-  //
   event(void)
       : unwatch_(false),
         is_executing_send_callback_(false),
@@ -457,23 +460,33 @@ class event {
   ~event(void) = default;
 
  public:
-  //
+  // Returns true if a callback is already running, false otherwise.
+  bool is_there_a_callback_already_running() {
+    return not is_executing_send_callback_ and
+                   not is_executing_receive_callback_
+               ? false
+               : true;
+  }
+
+ public:
+  // Events watcher should not anymore watch this file descriptor.
   std::atomic_bool unwatch_;
 
-  //
+  // Boolean to know if we are executing a callback (send operation).
   std::atomic_bool is_executing_send_callback_;
 
-  //
+  // Boolean to know if we are executing a callback (receive operation).
   std::atomic_bool is_executing_receive_callback_;
 
-  //
+  // The callback to execute if the file descriptor is ready for sending data.
   std::function<void(void)> send_callback_;
 
-  //
+  // The callback to execute if the file descriptor is ready for receiving data.
   std::function<void(void)> receive_callback_;
 };
 
-//
+// An events watcher uses poll() API to determine if a file descriptor is ready
+// for a specific operation (send or receive data).
 class events_watcher {
  public:
   events_watcher(void) : stop_(false) {}
@@ -482,12 +495,13 @@ class events_watcher {
 
   events_watcher &operator=(const events_watcher &) = delete;
 
-  ~events_watcher(void) {}
+  ~events_watcher(void) {
+    stop_ = true;
+    workers_.stop();
+  }
 
  public:
-  //
-  bool is_watching() const { return not stop_; }
-
+  // Returns true or false whether an event is registered for a specific fd.
   template <typename T>
   bool is_an_event_registered(const T &socket) {
     return events_registered_.find(socket.get_fd()) == events_registered_.end()
@@ -495,7 +509,7 @@ class events_watcher {
                : true;
   }
 
-  //
+  // Start watching on a file descriptor.
   template <typename T>
   void watch(const T &socket) {
     std::unique_lock<std::mutex> lock(mutex_events_);
@@ -508,6 +522,9 @@ class events_watcher {
     new_event.receive_callback_ = nullptr;
   }
 
+  // Set a callback to a specific file descriptor for a receive operation. The
+  // callback will be executed if the file descriptor is available for receiving
+  // data.
   template <typename T>
   void on_receive_callback(const T &socket,
                            const std::function<void(void)> &callback) {
@@ -518,6 +535,9 @@ class events_watcher {
     specific_event.receive_callback_ = callback;
   }
 
+  // Set a callback to a specific file descriptor for a send operation. The
+  // callback will be executed if the file descriptor is available for sending
+  // data.
   template <typename T>
   void on_send_callback(const T &socket,
                         const std::function<void(void)> &callback) {
@@ -528,6 +548,7 @@ class events_watcher {
     specific_event.send_callback_ = callback;
   }
 
+  // Stop watching on a file descriptor.
   template <typename T>
   void unwatch(const T &socket) {
     std::unique_lock<std::mutex> lock(mutex_events_);
@@ -537,36 +558,40 @@ class events_watcher {
 
     auto &socket_to_unwatch = events_registered_[socket.get_fd()];
 
-    if (socket_to_unwatch.is_executing_send_callback_ or
-        socket_to_unwatch.is_executing_receive_callback_) {
+    if (socket_to_unwatch.is_there_a_callback_already_running()) {
       socket_to_unwatch.unwatch_ = true;
       return;
+    } else {
+      auto iterator = events_registered_.find(socket.get_fd());
+      events_registered_.erase(iterator);
     }
-
-    auto iterator = events_registered_.find(socket.get_fd());
-    events_registered_.erase(iterator);
   }
 
  private:
-  //
+  // Boolean to know if the events watcher should stop.
   std::atomic_bool stop_;
 
-  //
+  // Thread pool to execute callbacks.
   tools::workers workers_;
 
-  //
+  // Mutex to synchronize the events registered.
   std::mutex mutex_events_;
 
-  //
+  // A map containing:
+  // @key: file descriptor
+  // @value: class event
   std::unordered_map<int, event> events_registered_;
 };
 
+// Events watcher singleton.
 static std::shared_ptr<events_watcher> events_watcher_singleton = nullptr;
 
+// Events watcher singleton setter.
 void set_events_watcher(const std::shared_ptr<events_watcher> &watcher) {
   events_watcher_singleton = watcher;
 }
 
+// Events watcher singleton getter.
 const std::shared_ptr<events_watcher> &get_events_watcher() {
   if (not events_watcher_singleton)
     events_watcher_singleton = std::make_shared<events_watcher>();

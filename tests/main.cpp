@@ -170,6 +170,7 @@ SCENARIO("testing tcp server") {
     tcp::server server;
 
     REQUIRE(not server.is_running());
+    server.stop();
     set_events_watcher(nullptr);
   }
 }
