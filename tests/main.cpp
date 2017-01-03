@@ -158,6 +158,13 @@ SCENARIO("testing tcp client") {
     REQUIRE(new_client.is_connected());
     REQUIRE(
         watcher->is_an_event_registered<tcp::socket>(new_client.get_socket()));
+
+    tcp::client::request request;
+
+    request.type = 0;
+    request.callback = nullptr;
+
+    if (not request.type) std::cout << "send request\n";
     set_events_watcher(nullptr);
   }
 }

@@ -201,7 +201,8 @@ class socket {
       __LOGIC_ERROR__("tcp::socket::bind: socket already bound to" + host_ +
                       ":" + std::to_string(port_));
 
-    if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+    if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes,
+                     sizeof(int)) == -1)
       __RUNTIME_ERROR__("tcp::socket::bind: setsockopt() failed.");
 
     if (::bind(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1)
@@ -461,7 +462,7 @@ class event {
 
  public:
   // Returns true if a callback is already running, false otherwise.
-  bool is_there_a_callback_already_running() {
+  bool is_there_a_callback_already_running(void) {
     return not is_executing_send_callback_ and
                    not is_executing_receive_callback_
                ? false
@@ -592,7 +593,7 @@ void set_events_watcher(const std::shared_ptr<events_watcher> &watcher) {
 }
 
 // Events watcher singleton getter.
-const std::shared_ptr<events_watcher> &get_events_watcher() {
+const std::shared_ptr<events_watcher> &get_events_watcher(void) {
   if (not events_watcher_singleton)
     events_watcher_singleton = std::make_shared<events_watcher>();
   return events_watcher_singleton;
@@ -602,7 +603,7 @@ namespace network {
 
 namespace tcp {
 
-//
+// TCP client.
 class client {
  public:
   client(void) : connected_(false), events_watcher_(get_events_watcher()) {}
@@ -621,13 +622,42 @@ class client {
   ~client(void) { disconnect(); }
 
  public:
+  // char type represents the type of operation:
+  // Send or receive data.
+  // 0 -> send operation.
+  // 1 -> receive operation.
+
+  // Structure representing the result of an operation.
+  struct result {
+    char type;
+    bool success;
+    std::size_t size;
+    std::vector<char> buffer;
+  };
+
+  // Structure representing a request for a future operation.
+  struct request {
+    char type;
+    std::size_t size;
+    std::vector<char> buffer;
+    std::function<void(const result &)> callback;
+  };
+
+ public:
   // Returns true or false whether the client is connected.
   bool is_connected(void) const { return connected_; }
 
   // Returns the client's socket.
-  const socket &get_socket() const { return socket_; }
+  const socket &get_socket(void) const { return socket_; }
 
-  //
+  // Connect the client to the given host/port.
+  void connect(const std::string &host, unsigned int port) {
+    socket_.connect(host, port);
+    events_watcher_->watch<tcp::socket>(socket_);
+    connected_ = true;
+  }
+
+  // Disconnect the client.
   void disconnect(void) {
     if (not connected_) return;
 
@@ -637,17 +667,43 @@ class client {
   }
 
  private:
-  //
+  // Receive callback.
+  void on_receive(void) {}
+
+  // Send callback.
+  void on_send(void) {}
+
+ public:
+  // Async send operation.
+  void async_send() {}
+
+  // Async receive operation.
+  void async_receive() {}
+
+ private:
+  // Client's socket.
   socket socket_;
 
-  //
+  // Boolean to know if the client is already connected.
   std::atomic_bool connected_;
 
-  //
+  // Mutex to synchronize send requests.
+  std::mutex mutex_send_requests_;
+
+  // Mutex to synchronize receive requests.
+  std::mutex mutex_receive_requests_;
+
+  // A queue containing send requests.
+  std::queue<request> send_requests_;
+
+  // A queue containing receive requests.
+  std::queue<request> receive_requests_;
+
+  // A smart pointer on the events watcher singleton.
   std::shared_ptr<events_watcher> events_watcher_;
 };
 
-//
+// TCP server.
 class server {
  public:
   server(void) : running_(false), events_watcher_(get_events_watcher()) {}
