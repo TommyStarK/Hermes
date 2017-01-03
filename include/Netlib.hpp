@@ -201,8 +201,7 @@ class socket {
       __LOGIC_ERROR__("tcp::socket::bind: Socket is  already bound to" + host_ +
                       ":" + std::to_string(port_));
 
-    if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes,
-                     sizeof(int)) == -1)
+    if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
       __RUNTIME_ERROR__("tcp::socket::bind: setsockopt() failed.");
 
     if (::bind(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1)
