@@ -60,7 +60,7 @@ class workers {
     if (workers_nbr > std::thread::hardware_concurrency())
       __LOGIC_ERROR__(
           "tools::workers::constructor: Number of workers is greater than the"
-          "number of concurrent threads supported by the implementation\n.");
+          "number of concurrent threads supported by the system\n.");
 
     // We start the workers.
     for (unsigned int i = 0; i < workers_nbr; ++i)
@@ -198,7 +198,7 @@ class socket {
     create_socket();
 
     if (is_socket_bound_)
-      __LOGIC_ERROR__("tcp::socket::bind: socket already bound to" + host_ +
+      __LOGIC_ERROR__("tcp::socket::bind: Socket is  already bound to" + host_ +
                       ":" + std::to_string(port_));
 
     if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes,
@@ -652,6 +652,8 @@ class client {
 
   // Connect the client to the given host/port.
   void connect(const std::string &host, unsigned int port) {
+    if (connected_)
+      __LOGIC_ERROR__("tcp::client::connect: The client is already connected.");
     socket_.connect(host, port);
     events_watcher_->watch<tcp::socket>(socket_);
     connected_ = true;
