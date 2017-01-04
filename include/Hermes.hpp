@@ -650,27 +650,81 @@ class client {
   }
 
  private:
-  // Receive callback.
-  void on_receive(void) {}
-
   // Send callback.
-  void on_send(void) {}
+  void on_send(void) {
+    std::unique_lock<std::mutex> lock(send_requests_mutex_);
+
+    if (send_requests_.empty()) return;
+
+    bool success = false;
+    std::size_t result = -1;
+    auto request = send_requests_.front();
+    auto buffer = request.first;
+    auto callback = request.second;
+
+    try {
+      result = socket_.send(std::string(buffer.begin(), buffer.end()));
+      success = true;
+    } catch (const std::exception &e) {
+      success = false;
+    }
+
+    send_requests_.pop();
+
+    if (send_requests_.empty())
+      events_watcher_->on_send_callback<tcp::socket>(socket_, nullptr);
+
+    if (!success) disconnect();
+
+    if (callback) callback(success, result);
+  }
+
+  // Receive callback.
+  void on_receive(void) {
+    std::unique_lock<std::mutex> lock(receive_requests_mutex_);
+
+    if (receive_requests_.empty()) return;
+
+    bool success = false;
+    std::vector<char> result;
+    auto request = receive_requests_.front();
+    auto size_to_read = request.first;
+    auto callback = request.second;
+
+    try {
+      result = socket_.receive(size_to_read);
+      success = true;
+    } catch (const std::exception &e) {
+      success = false;
+    }
+
+    receive_requests_.pop();
+
+    if (receive_requests_.empty())
+      events_watcher_->on_receive_callback<tcp::socket>(socket_, nullptr);
+
+    if (!success) disconnect();
+
+    if (callback) callback(success, result);
+  }
 
  public:
   // Async send operation.
-  void async_send(const std::string &data,
-                  const async_send_callback &callback) {
-    async_send(std::vector<char>(data.begin(), data.end()), callback);
+  void async_send(const std::string &str, const async_send_callback &callback) {
+    async_send(std::vector<char>(str.begin(), str.end()), callback);
   }
 
   // Async send operation.
   void async_send(std::vector<char> data, const async_send_callback &callback) {
+    if (!connected_)
+      __LOGIC_ERROR__(
+          "tcp::client::async_send: You must connect the client before trying "
+          "to send data.");
+
     std::unique_lock<std::mutex> lock(send_requests_mutex_);
 
     if (callback) {
-      std::pair<std::vector<char>, async_send_callback> p;
-      p = std::make_pair(data, callback);
-      send_requests_.push(p);
+      send_requests_.push(std::make_pair(data, callback));
       events_watcher_->on_send_callback<tcp::socket>(
           socket_, std::bind(&client::on_send, this));
     }
@@ -678,12 +732,15 @@ class client {
 
   // Async receive operation.
   void async_receive(std::size_t size, const async_receive_callback &callback) {
+    if (!connected_)
+      __LOGIC_ERROR__(
+          "tcp::client::async_receive: You must connect the client before "
+          "trying to receive data.");
+
     std::unique_lock<std::mutex> lock(receive_requests_mutex_);
 
     if (callback) {
-      std::pair<std::size_t, async_receive_callback> p;
-      p = std::make_pair(size, callback);
-      receive_requests_.push(p);
+      receive_requests_.push(std::make_pair(size, callback));
       events_watcher_->on_receive_callback<tcp::socket>(
           socket_, std::bind(&client::on_receive, this));
     }
