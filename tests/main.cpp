@@ -145,18 +145,18 @@ SCENARIO("testing tcp socket: client operations") {
 SCENARIO("testing tcp client") {
   WHEN("using default constructor and move constructor") {
     tcp::client client;
-    std::shared_ptr<events_watcher> watcher;
-    watcher = get_events_watcher();
+    std::shared_ptr<service> service;
+    service = get_service();
 
     REQUIRE(!client.is_connected());
-    REQUIRE(!watcher->is_an_event_registered<tcp::socket>(client.get_socket()));
+    REQUIRE(!service->is_an_event_registered<tcp::socket>(client.get_socket()));
 
     tcp::socket socket;
     tcp::client new_c(std::move(socket));
 
     REQUIRE(new_c.is_connected());
-    REQUIRE(watcher->is_an_event_registered<tcp::socket>(new_c.get_socket()));
-    set_events_watcher(nullptr);
+    REQUIRE(service->is_an_event_registered<tcp::socket>(new_c.get_socket()));
+    set_service(nullptr);
   }
 }
 
@@ -169,27 +169,27 @@ SCENARIO("testing tcp server") {
 
     REQUIRE(!server.is_running());
     server.stop();
-    set_events_watcher(nullptr);
+    set_service(nullptr);
   }
 }
 
 //
-// Events watcher tests section
+// Poll service tests section
 //
-SCENARIO("testing events watcher") {
+SCENARIO("testing service using poll") {
   WHEN("testing basic features") {
-    REQUIRE(events_watcher_singleton == nullptr);
-    std::shared_ptr<events_watcher> watcher;
-    watcher = get_events_watcher();
-    REQUIRE(watcher != nullptr);
+    REQUIRE(service_g == nullptr);
+    std::shared_ptr<service> service;
+    service = get_service();
+    REQUIRE(service != nullptr);
 
     tcp::socket socket;
-    REQUIRE(watcher->is_an_event_registered<tcp::socket>(socket) == false);
+    REQUIRE(service->is_an_event_registered<tcp::socket>(socket) == false);
 
-    watcher->watch<tcp::socket>(socket);
-    REQUIRE(watcher->is_an_event_registered<tcp::socket>(socket) == true);
+    service->watch<tcp::socket>(socket);
+    REQUIRE(service->is_an_event_registered<tcp::socket>(socket) == true);
 
-    watcher->unwatch<tcp::socket>(socket);
-    REQUIRE(watcher->is_an_event_registered<tcp::socket>(socket) == false);
+    service->unwatch<tcp::socket>(socket);
+    REQUIRE(service->is_an_event_registered<tcp::socket>(socket) == false);
   }
 }
