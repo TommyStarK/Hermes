@@ -657,7 +657,7 @@ class client {
     if (send_requests_.empty()) return;
 
     bool success = false;
-    std::size_t result = -1;
+    std::size_t result = 0;
     auto request = send_requests_.front();
     auto buffer = request.first;
     auto callback = request.second;
@@ -666,6 +666,7 @@ class client {
       result = socket_.send(std::string(buffer.begin(), buffer.end()));
       success = true;
     } catch (const std::exception &e) {
+      __DISPLAY_ERROR__(e.what());
       success = false;
     }
 
@@ -695,6 +696,7 @@ class client {
       result = socket_.receive(size_to_read);
       success = true;
     } catch (const std::exception &e) {
+      __DISPLAY_ERROR__(e.what());
       success = false;
     }
 
