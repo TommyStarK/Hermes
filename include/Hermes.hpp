@@ -24,6 +24,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace hermes {
@@ -620,6 +621,10 @@ class client {
   ~client(void) { disconnect(); }
 
  public:
+  typedef std::function<void(bool, std::size_t)> async_send_callback;
+  typedef std::function<void(bool, std::vector<char>)> async_receive_callback;
+
+ public:
   // Returns true or false whether the client is connected.
   bool is_connected(void) const { return connected_; }
 
@@ -653,14 +658,52 @@ class client {
 
  public:
   // Async send operation.
-  void async_send() {}
+  void async_send(const std::string &data,
+                  const async_send_callback &callback) {
+    async_send(std::vector<char>(data.begin(), data.end()), callback);
+  }
+
+  // Async send operation.
+  void async_send(std::vector<char> data, const async_send_callback &callback) {
+    std::unique_lock<std::mutex> lock(send_requests_mutex_);
+
+    if (callback) {
+      std::pair<std::vector<char>, async_send_callback> p;
+      p = std::make_pair(data, callback);
+      send_requests_.push(p);
+      events_watcher_->on_send_callback<tcp::socket>(
+          socket_, std::bind(&client::on_send, this));
+    }
+  }
 
   // Async receive operation.
-  void async_receive() {}
+  void async_receive(std::size_t size, const async_receive_callback &callback) {
+    std::unique_lock<std::mutex> lock(receive_requests_mutex_);
+
+    if (callback) {
+      std::pair<std::size_t, async_receive_callback> p;
+      p = std::make_pair(size, callback);
+      receive_requests_.push(p);
+      events_watcher_->on_receive_callback<tcp::socket>(
+          socket_, std::bind(&client::on_receive, this));
+    }
+  }
 
  private:
   // Client's socket.
   socket socket_;
+
+  // Mutex to synchronize the queue of send requests.
+  std::mutex send_requests_mutex_;
+
+  // Mutex to synchronize the queue of receive requests.
+  std::mutex receive_requests_mutex_;
+
+  // A queue containing send requests.
+  std::queue<std::pair<std::vector<char>, async_send_callback>> send_requests_;
+
+  // A queue containing receive requests.
+  std::queue<std::pair<std::size_t, async_receive_callback>> receive_requests_;
 
   // Boolean to know if the client is already connected.
   std::atomic_bool connected_;

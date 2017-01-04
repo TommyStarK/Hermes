@@ -156,6 +156,17 @@ SCENARIO("testing tcp client") {
 
     REQUIRE(new_c.is_connected());
     REQUIRE(watcher->is_an_event_registered<tcp::socket>(new_c.get_socket()));
+
+    new_c.async_receive(2048, [](bool success, std::vector<char> received) {
+      std::cout << success << std::endl;
+      std::cout << received.data() << std::endl;
+    });
+
+    new_c.async_send("test\n", [](bool success, std::size_t bytes) {
+      std::cout << success << std::endl;
+      std::cout << bytes << std::endl;
+    });
+
     set_events_watcher(nullptr);
   }
 }
