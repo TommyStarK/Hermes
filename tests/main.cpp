@@ -22,7 +22,7 @@ SCENARIO("testing workers (Thread pool)") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     workers.enqueue_job([&workers]() {
       workers.stop();
-      REQUIRE(not workers.are_working());
+      REQUIRE(!workers.are_working());
     });
   }
 }
@@ -148,23 +148,14 @@ SCENARIO("testing tcp client") {
     std::shared_ptr<events_watcher> watcher;
     watcher = get_events_watcher();
 
-    REQUIRE(not client.is_connected());
-    REQUIRE(
-        not watcher->is_an_event_registered<tcp::socket>(client.get_socket()));
+    REQUIRE(!client.is_connected());
+    REQUIRE(!watcher->is_an_event_registered<tcp::socket>(client.get_socket()));
 
     tcp::socket socket;
-    tcp::client new_client(std::move(socket));
+    tcp::client new_c(std::move(socket));
 
-    REQUIRE(new_client.is_connected());
-    REQUIRE(
-        watcher->is_an_event_registered<tcp::socket>(new_client.get_socket()));
-
-    tcp::client::request request;
-
-    request.type = 0;
-    request.callback = nullptr;
-
-    if (not request.type) std::cout << "send request\n";
+    REQUIRE(new_c.is_connected());
+    REQUIRE(watcher->is_an_event_registered<tcp::socket>(new_c.get_socket()));
     set_events_watcher(nullptr);
   }
 }
@@ -176,7 +167,7 @@ SCENARIO("testing tcp server") {
   WHEN("constructing a tcp server") {
     tcp::server server;
 
-    REQUIRE(not server.is_running());
+    REQUIRE(!server.is_running());
     server.stop();
     set_events_watcher(nullptr);
   }
@@ -196,7 +187,6 @@ SCENARIO("testing events watcher") {
     REQUIRE(watcher->is_an_event_registered<tcp::socket>(socket) == false);
 
     watcher->watch<tcp::socket>(socket);
-
     REQUIRE(watcher->is_an_event_registered<tcp::socket>(socket) == true);
 
     watcher->unwatch<tcp::socket>(socket);

@@ -70,7 +70,7 @@ class workers {
         // process a job, removes it from the queue and executes it.
 
         // We loop waiting for a new job.
-        while (not stop_) {
+        while (!stop_) {
           auto job = retrieve_job();
           if (job) job();
         }
@@ -101,7 +101,7 @@ class workers {
   // Allows the user to enqueue a new job which must be processed.
   // It will notify every threads that a job has been enqueued.
   void enqueue_job(const std::function<void(void)> &new_job) {
-    if (not new_job)
+    if (!new_job)
       __LOGIC_ERROR__(
           "tools::workers::enqueue_job: Passing nullptr instead of const "
           "std::function<void(void)> &.");
@@ -112,7 +112,7 @@ class workers {
   }
 
   // Returns true or false whether workers are working.
-  bool are_working(void) const { return not stop_; }
+  bool are_working(void) const { return !stop_; }
 
  private:
   // Check the job queue to know if there is a job waiting. If that is the case
@@ -120,7 +120,7 @@ class workers {
   std::function<void(void)> retrieve_job() {
     std::unique_lock<std::mutex> lock(mutex_job_queue_);
 
-    condition_.wait(lock, [&] { return stop_ or not job_queue_.empty(); });
+    condition_.wait(lock, [&] { return stop_ || !job_queue_.empty(); });
 
     if (job_queue_.empty()) return nullptr;
 
@@ -462,8 +462,7 @@ class event {
  public:
   // Returns true if a callback is already running, false otherwise.
   bool is_there_a_callback_already_running(void) {
-    return not is_executing_send_callback_ and
-                   not is_executing_receive_callback_
+    return !is_executing_send_callback_ && !is_executing_receive_callback_
                ? false
                : true;
   }
@@ -593,7 +592,7 @@ void set_events_watcher(const std::shared_ptr<events_watcher> &watcher) {
 
 // Events watcher singleton getter.
 const std::shared_ptr<events_watcher> &get_events_watcher(void) {
-  if (not events_watcher_singleton)
+  if (!events_watcher_singleton)
     events_watcher_singleton = std::make_shared<events_watcher>();
   return events_watcher_singleton;
 }
@@ -621,28 +620,6 @@ class client {
   ~client(void) { disconnect(); }
 
  public:
-  // char type represents the type of operation:
-  // Send or receive data.
-  // 0 -> send operation.
-  // 1 -> receive operation.
-
-  // Structure representing the result of an operation.
-  struct result {
-    char type;
-    bool success;
-    std::size_t size;
-    std::vector<char> buffer;
-  };
-
-  // Structure representing a request for a future operation.
-  struct request {
-    char type;
-    std::size_t size;
-    std::vector<char> buffer;
-    std::function<void(const result &)> callback;
-  };
-
- public:
   // Returns true or false whether the client is connected.
   bool is_connected(void) const { return connected_; }
 
@@ -660,7 +637,7 @@ class client {
 
   // Disconnect the client.
   void disconnect(void) {
-    if (not connected_) return;
+    if (!connected_) return;
 
     connected_ = false;
     events_watcher_->unwatch<tcp::socket>(socket_);
@@ -687,18 +664,6 @@ class client {
 
   // Boolean to know if the client is already connected.
   std::atomic_bool connected_;
-
-  // Mutex to synchronize send requests.
-  std::mutex mutex_send_requests_;
-
-  // Mutex to synchronize receive requests.
-  std::mutex mutex_receive_requests_;
-
-  // A queue containing send requests.
-  std::queue<request> send_requests_;
-
-  // A queue containing receive requests.
-  std::queue<request> receive_requests_;
 
   // A smart pointer on the events watcher singleton.
   std::shared_ptr<events_watcher> events_watcher_;
@@ -731,7 +696,7 @@ class server {
     if (running_)
       __LOGIC_ERROR__("tcp::server::run: Server is already running.");
 
-    if (not callback_)
+    if (!callback_)
       __LOGIC_ERROR__(
           "tcp::server::run: You must provide a callback for a new "
           "connection.\n Use method on_connection(const std::function<const "
@@ -747,7 +712,7 @@ class server {
 
   // Stop the server.
   void stop(void) {
-    if (not running_) return;
+    if (!running_) return;
 
     std::unique_lock<std::mutex> lock(mutex_);
     running_ = false;
