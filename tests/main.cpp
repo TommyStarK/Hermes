@@ -2,18 +2,18 @@
 #include <chrono>
 #include <memory>
 #include <thread>
-#include "Netlib.hpp"
+#include "Hermes.hpp"
 #include "catch.hpp"
 
-using namespace netlib;
-using namespace netlib::network;
+using namespace hermes;
+using namespace hermes::network;
 
 //
 // Workers tests section
 //
 SCENARIO("testing workers (Thread pool)") {
   WHEN("giving 3 jobs to process") {
-    netlib::tools::workers workers(3);
+    hermes::tools::workers workers(3);
 
     REQUIRE(workers.are_working());
     workers.enqueue_job([]() {});

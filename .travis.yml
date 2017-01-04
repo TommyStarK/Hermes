@@ -35,4 +35,4 @@ before_script:
     - make
 
 script:
-  - ./test_netlib
+  - ./test_hermes

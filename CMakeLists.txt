@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 2.8.7 FATAL_ERROR)
 
 # Project name
-set(PROJECT Netlib)
+set(PROJECT Hermes)
 
 # flags
 include(CheckCXXCompilerFlag)
@@ -22,4 +22,4 @@ include_directories(libs)
 include_directories(include)
 include_directories(libs/Catch/single_include)
 
-add_executable(test_netlib tests/main.cpp)
+add_executable(test_hermes tests/main.cpp)

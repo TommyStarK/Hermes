@@ -26,7 +26,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace netlib {
+namespace hermes {
 
 namespace tools {
 
@@ -41,7 +41,7 @@ static unsigned int const THREADS_NBR = std::thread::hardware_concurrency();
 
 // Format the error to provide an understandable output.
 std::string format_error(const std::string &msg) {
-  return std::string("[Netlib ") + std::string(__FILE__) + std::string(":") +
+  return std::string("[hermes ") + std::string(__FILE__) + std::string(":") +
          std::to_string(__LINE__) + std::string("]\n") + msg;
 }
 
@@ -792,4 +792,4 @@ class server {
 
 }  // namespace udp
 }  // namespace network
-}  // namespace netlib
+}  // namespace hermes
