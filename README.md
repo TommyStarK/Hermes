@@ -1,5 +1,5 @@
 
-# Netlib    [![Build Status](https://travis-ci.org/TommyStarK/Netlib.svg?branch=master)](https://travis-ci.org/TommyStarK/Netlib) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+# Hermes    [![Build Status](https://travis-ci.org/TommyStarK/Hermes.svg?branch=master)](https://travis-ci.org/TommyStarK/Hermes) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 A cross-platform C++11 network library without dependencies.
 
@@ -9,12 +9,12 @@ A cross-platform C++11 network library without dependencies.
 
 ## Compile
 
-Netlib is a header only library, so there is nothing to build and to link with your program.
+Hermes is a header only library, so there is nothing to build and to link with your program.
 
- - Download Netlib:
+ - Download Hermes:
 
 ```bash
-  git clone --recursive https://github.com/TommyStarK/Netlib.git
+  git clone --recursive https://github.com/TommyStarK/Hermes.git
 ```
 
 ## Contribution
