@@ -145,18 +145,18 @@ SCENARIO("testing tcp socket: client operations") {
 SCENARIO("testing tcp client") {
   WHEN("using default constructor and move constructor") {
     tcp::client client;
-    std::shared_ptr<service> service;
-    service = get_service();
+    std::shared_ptr<poller> poller;
+    poller = get_poller();
 
     REQUIRE(!client.is_connected());
-    REQUIRE(!service->is_an_event_registered<tcp::socket>(client.get_socket()));
+    REQUIRE(!poller->has<tcp::socket>(client.get_socket()));
 
     tcp::socket socket;
     tcp::client new_c(std::move(socket));
 
     REQUIRE(new_c.is_connected());
-    REQUIRE(service->is_an_event_registered<tcp::socket>(new_c.get_socket()));
-    set_service(nullptr);
+    REQUIRE(poller->has<tcp::socket>(new_c.get_socket()));
+    set_poller(nullptr);
   }
 }
 
@@ -169,27 +169,27 @@ SCENARIO("testing tcp server") {
 
     REQUIRE(!server.is_running());
     server.stop();
-    set_service(nullptr);
+    set_poller(nullptr);
   }
 }
 
 //
-// Poll service tests section
+// Poll poller tests section
 //
-SCENARIO("testing service using poll") {
+SCENARIO("testing poller") {
   WHEN("testing basic features") {
-    REQUIRE(service_g == nullptr);
-    std::shared_ptr<service> service;
-    service = get_service();
-    REQUIRE(service != nullptr);
+    REQUIRE(poller_g == nullptr);
+    std::shared_ptr<poller> poller;
+    poller = get_poller();
+    REQUIRE(poller != nullptr);
 
     tcp::socket socket;
-    REQUIRE(service->is_an_event_registered<tcp::socket>(socket) == false);
+    REQUIRE(poller->has<tcp::socket>(socket) == false);
 
-    service->watch<tcp::socket>(socket);
-    REQUIRE(service->is_an_event_registered<tcp::socket>(socket) == true);
+    poller->add<tcp::socket>(socket);
+    REQUIRE(poller->has<tcp::socket>(socket) == true);
 
-    service->unwatch<tcp::socket>(socket);
-    REQUIRE(service->is_an_event_registered<tcp::socket>(socket) == false);
+    poller->remove<tcp::socket>(socket);
+    REQUIRE(poller->has<tcp::socket>(socket) == false);
   }
 }

@@ -448,7 +448,8 @@ class socket {
 }  // namespace udp
 }  // namespace network
 
-// Represents an expected event for a file descriptor.
+// Event wrapper.
+// Represent a kind of event monitored by the poller.
 class event {
  public:
   event(void)
@@ -469,13 +470,13 @@ class event {
   }
 
  public:
-  // Events watcher should not anymore watch this file descriptor.
+  // Boolean to know if the poller should stop monitoring this file descriptor.
   std::atomic_bool unwatch_;
 
-  // Boolean to know if we are executing a callback (send operation).
+  // Boolean to know if we are executing a callback after writting data.
   std::atomic_bool is_executing_send_callback_;
 
-  // Boolean to know if we are executing a callback (receive operation).
+  // Boolean to know if we are executing a callback after reading data.
   std::atomic_bool is_executing_receive_callback_;
 
   // The callback to execute if the file descriptor is ready for sending data.
@@ -485,31 +486,39 @@ class event {
   std::function<void(void)> receive_callback_;
 };
 
-// A poll service using poll() API to determine if a file descriptor is ready
-// for a specific operation (send or receive data).
-class service {
+// A Polling wrapper.
+// Poller provides an access to polling for any given socket. The poller is
+// using a threads pool as workers to execute the callback provided when the
+// socket is available for the expected event.
+class poller {
  public:
-  service(void) : stop_(false) {}
+  // Construct an empty polling model.
+  poller(void) : stop_(false) {}
 
-  service(const service &) = delete;
+  poller(const poller &) = delete;
 
-  service &operator=(const service &) = delete;
+  poller &operator=(const poller &) = delete;
 
-  ~service(void) {
+  // Clear the poller.
+  // Any workers will need to be stopped.
+  ~poller(void) {
     stop_ = true;
     workers_.stop();
   }
 
  public:
-  // Returns true or false whether an event is registered for a specific fd.
+  // Check if we are monitoring a specific socket.
+  // Returns true if the socket is currently watched.
   template <typename T>
-  bool is_an_event_registered(const T &socket) {
-    return events_.find(socket.get_fd()) == events_.end() ? false : true;
+  bool has(const T &s) {
+    return events_.find(s.get_fd()) == events_.end() ? false : true;
   }
 
-  // Start watching on a file descriptor.
+  // Add a socket to the polling model.
+  // A socket must be added to the poller before being monitored for a specific
+  // event.
   template <typename T>
-  void watch(const T &socket) {
+  void add(const T &socket) {
     std::unique_lock<std::mutex> lock(mutex_events_);
 
     auto &new_event = events_[socket.get_fd()];
@@ -520,33 +529,35 @@ class service {
     new_event.receive_callback_ = nullptr;
   }
 
-  // Set a callback to a specific file descriptor for a receive operation. The
-  // callback will be executed if the file descriptor is available for receiving
-  // data.
+  // Set a callback to the given socket which will be executed if there is data
+  // to read on this socket.
   template <typename T>
-  void on_receive_available(const T &s, const std::function<void(void)> &c) {
+  void set_receive_callback(const T &s, const std::function<void(void)> &c) {
     std::unique_lock<std::mutex> lock(mutex_events_);
+
+    if (events_.find(s.get_fd()) == events_.end()) return;
 
     auto &specific_event = events_[s.get_fd()];
     specific_event.unwatch_ = false;
     specific_event.receive_callback_ = c;
   }
 
-  // Set a callback to a specific file descriptor for a send operation. The
-  // callback will be executed if the file descriptor is available for sending
-  // data.
+  // Set a callback to the given socket which will be executed if writting now
+  // will not block.
   template <typename T>
-  void on_send_available(const T &s, const std::function<void(void)> &c) {
+  void set_send_callback(const T &s, const std::function<void(void)> &c) {
     std::unique_lock<std::mutex> lock(mutex_events_);
+
+    if (events_.find(s.get_fd()) == events_.end()) return;
 
     auto &specific_event = events_[s.get_fd()];
     specific_event.unwatch_ = false;
     specific_event.send_callback_ = c;
   }
 
-  // Stop watching on a file descriptor.
+  // Stop monitoring the given socket.
   template <typename T>
-  void unwatch(const T &socket) {
+  void remove(const T &socket) {
     std::unique_lock<std::mutex> lock(mutex_events_);
 
     if (events_.find(socket.get_fd()) == events_.end()) return;
@@ -563,31 +574,31 @@ class service {
   }
 
  private:
-  // Boolean to know if the events watcher should stop.
+  // Boolean to know if the poller should stop.
   std::atomic_bool stop_;
 
-  // Thread pool to execute callbacks.
+  // Threads pool to execute callbacks.
   tools::workers workers_;
 
-  // Mutex to synchronize the events registered.
+  // Mutex to synchronize the events monitored.
   std::mutex mutex_events_;
 
   // A map containing:
   // @key: file descriptor
-  // @value: class event
+  // @value: class event representing the events monitored.
   std::unordered_map<int, event> events_;
 };
 
-// Events watcher singleton.
-static std::shared_ptr<service> service_g = nullptr;
+// Poller singleton.
+static std::shared_ptr<poller> poller_g = nullptr;
 
-// Events watcher singleton setter.
-void set_service(const std::shared_ptr<service> &s) { service_g = s; }
+// Setter.
+void set_poller(const std::shared_ptr<poller> &s) { poller_g = s; }
 
-// Events watcher singleton getter.
-const std::shared_ptr<service> &get_service(void) {
-  if (!service_g) service_g = std::make_shared<service>();
-  return service_g;
+// Getter.
+const std::shared_ptr<poller> &get_poller(void) {
+  if (!poller_g) poller_g = std::make_shared<poller>();
+  return poller_g;
 }
 
 namespace network {
@@ -597,11 +608,11 @@ namespace tcp {
 // TCP client.
 class client {
  public:
-  client(void) : connected_(false), service_(get_service()) {}
+  client(void) : connected_(false), poller_(get_poller()) {}
 
   client(socket &&socket)
-      : socket_(std::move(socket)), connected_(true), service_(get_service()) {
-    service_->watch<tcp::socket>(socket_);
+      : socket_(std::move(socket)), connected_(true), poller_(get_poller()) {
+    poller_->add<tcp::socket>(socket_);
   }
 
   client(const client &) = delete;
@@ -626,7 +637,7 @@ class client {
     if (connected_)
       __LOGIC_ERROR__("tcp::client::connect: The client is already connected.");
     socket_.connect(host, port);
-    service_->watch<tcp::socket>(socket_);
+    poller_->add<tcp::socket>(socket_);
     connected_ = true;
   }
 
@@ -635,7 +646,7 @@ class client {
     if (!connected_) return;
 
     connected_ = false;
-    service_->unwatch<tcp::socket>(socket_);
+    poller_->remove<tcp::socket>(socket_);
     socket_.close();
   }
 
@@ -663,7 +674,7 @@ class client {
     send_requests_.pop();
 
     if (send_requests_.empty())
-      service_->on_send_available<tcp::socket>(socket_, nullptr);
+      poller_->set_send_callback<tcp::socket>(socket_, nullptr);
 
     if (!success) disconnect();
 
@@ -693,7 +704,7 @@ class client {
     receive_requests_.pop();
 
     if (receive_requests_.empty())
-      service_->on_receive_available<tcp::socket>(socket_, nullptr);
+      poller_->set_receive_callback<tcp::socket>(socket_, nullptr);
 
     if (!success) disconnect();
 
@@ -717,7 +728,7 @@ class client {
 
     if (callback) {
       send_requests_.push(std::make_pair(data, callback));
-      service_->on_send_available<tcp::socket>(
+      poller_->set_send_callback<tcp::socket>(
           socket_, std::bind(&client::on_send, this));
     } else {
       __DISPLAY_ERROR__(
@@ -737,7 +748,7 @@ class client {
 
     if (callback) {
       receive_requests_.push(std::make_pair(size, callback));
-      service_->on_receive_available<tcp::socket>(
+      poller_->set_receive_callback<tcp::socket>(
           socket_, std::bind(&client::on_receive, this));
     } else {
       __DISPLAY_ERROR__(
@@ -766,13 +777,13 @@ class client {
   std::atomic_bool connected_;
 
   // A smart pointer on the events watcher singleton.
-  std::shared_ptr<service> service_;
+  std::shared_ptr<poller> poller_;
 };
 
 // TCP server.
 class server {
  public:
-  server(void) : running_(false), service_(get_service()) {}
+  server(void) : running_(false), poller_(get_poller()) {}
 
   server(const server &) = delete;
 
@@ -804,8 +815,8 @@ class server {
 
     socket_.bind(host, port);
     socket_.listen();
-    service_->watch<tcp::socket>(socket_);
-    service_->on_receive_available<tcp::socket>(
+    poller_->add<tcp::socket>(socket_);
+    poller_->set_receive_callback<tcp::socket>(
         socket_, std::bind(&server::on_accept, this));
     running_ = true;
   }
@@ -816,7 +827,7 @@ class server {
 
     std::unique_lock<std::mutex> lock(mutex_);
     running_ = false;
-    service_->unwatch<tcp::socket>(socket_);
+    poller_->remove<tcp::socket>(socket_);
     socket_.close();
     for (auto &client : clients_) client->disconnect();
     clients_.clear();
@@ -848,7 +859,7 @@ class server {
   std::atomic_bool running_;
 
   // A smart pointer on the events watcher.
-  std::shared_ptr<service> service_;
+  std::shared_ptr<poller> poller_;
 
   // A set of clients connected to our server.
   std::unordered_set<std::shared_ptr<client>> clients_;
@@ -864,7 +875,7 @@ namespace udp {
 //
 class client {
  public:
-  client(void) : service_(get_service()) {}
+  client(void) : poller_(get_poller()) {}
   ~client() {}
 
  private:
@@ -872,13 +883,13 @@ class client {
   socket socket_;
 
   //
-  std::shared_ptr<service> service_;
+  std::shared_ptr<poller> poller_;
 };
 
 //
 class server {
  public:
-  server(void) : service_(get_service()) {}
+  server(void) : poller_(get_poller()) {}
   ~server(void) {}
 
  private:
@@ -886,7 +897,7 @@ class server {
   socket socket_;
 
   //
-  std::shared_ptr<service> service_;
+  std::shared_ptr<poller> poller_;
 };
 
 }  // namespace udp
