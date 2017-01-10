@@ -7,7 +7,7 @@ compiler:
 os:
   - linux
   - osx
-  
+
 env:
     global:
         - CMAKE_VERSION="cmake-3.4.0-Linux-x86_64"
@@ -40,4 +40,4 @@ before_script:
     - make
 
 script:
-  - ./test_hermes
+  - ./tests_hermes
