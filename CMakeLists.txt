@@ -3,23 +3,17 @@ cmake_minimum_required(VERSION 2.8.7 FATAL_ERROR)
 
 # Project name
 set(PROJECT Hermes)
+project(${PROJECT} CXX)
 
-# flags
-include(CheckCXXCompilerFlag)
-CHECK_CXX_COMPILER_FLAG("-std=c++14" COMPILER_SUPPORTS_CXX14)
-CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-if(COMPILER_SUPPORTS_CXX14)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
-elseif(COMPILER_SUPPORTS_CXX11)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-else()
-message(STATUS "The compiler ${CMAKE_CXX_COMPILER} has no C++11/14 support. Please use a different C++ compiler.")
-endif()
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror -lpthread -g")
+#compilation operations
+IF (WIN32)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3 /O2")
+ELSE ()
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -Werror -pthread -g")
+ENDIF (WIN32)
 
 include_directories(libs)
 include_directories(include)
 include_directories(libs/Catch/single_include)
 
-add_executable(test_hermes tests/main.cpp)
+add_executable(tests_hermes tests/main.cpp)

@@ -1,16 +1,15 @@
 #pragma once
 
-#define __windows__ _WIN32 || _WIN64
-
-#ifdef __linux__
+#ifdef _WIN32
+#include <WinSock2.h>
+#else
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#elif __windows__
-#include <WinSock2.h>
-#endif
+#endif  // _WIN32
 
 #include <atomic>
 #include <condition_variable>
@@ -155,8 +154,20 @@ using namespace tools;
 
 namespace tcp {
 
-#ifdef __linux__
+#ifdef _WIN32
 
+//
+class socket {
+ public:
+  socket() {}
+  ~socket() = default;
+  int fd_;
+  int get_fd() const { return fd_; }
+};
+
+#else
+
+//
 class socket {
  public:
   // Basic constructor.
@@ -408,22 +419,14 @@ class socket {
   bool is_socket_bound_;
 };
 
-#elif __windows__
-
-class socket {
-  socket() {}
-  ~socket() = default;
-  int fd_;
-  int get_fd() const { return fd_; }
-};
-
-#endif
+#endif  // _WIN32
 
 }  // namespace tcp
 
 namespace udp {
 
-#ifdef __linux__
+#ifdef _WIN32
+//
 
 class socket {
  public:
@@ -433,8 +436,9 @@ class socket {
   int get_fd() const { return fd_; }
 };
 
-#elif __windows__
+#else
 
+//
 class socket {
  public:
   socket() {}
@@ -443,13 +447,13 @@ class socket {
   int get_fd() const { return fd_; }
 };
 
-#endif
+#endif  // _WIN32
 
 }  // namespace udp
 }  // namespace network
 
-// Event wrapper.
-// Represent a kind of event monitored by the poller.
+// Event
+//
 class event {
  public:
   event(void)
@@ -460,14 +464,6 @@ class event {
         receive_callback_(nullptr) {}
 
   ~event(void) = default;
-
- public:
-  // Returns true if a callback is already running, false otherwise.
-  bool is_there_a_callback_already_running(void) {
-    return !is_executing_send_callback_ && !is_executing_receive_callback_
-               ? false
-               : true;
-  }
 
  public:
   // Boolean to know if the poller should stop monitoring this file descriptor.
@@ -485,6 +481,17 @@ class event {
   // The callback to execute if the file descriptor is ready for receiving data.
   std::function<void(void)> receive_callback_;
 };
+
+#ifdef _WIN32
+
+//
+class poller {
+ public:
+  poller(void) {}
+  ~poller(void) {}
+};
+
+#else
 
 // A Polling wrapper.
 // Poller provides an access to polling for any given socket. The poller is
@@ -535,8 +542,6 @@ class poller {
   void set_receive_callback(const T &s, const std::function<void(void)> &c) {
     std::unique_lock<std::mutex> lock(mutex_events_);
 
-    if (events_.find(s.get_fd()) == events_.end()) return;
-
     auto &specific_event = events_[s.get_fd()];
     specific_event.unwatch_ = false;
     specific_event.receive_callback_ = c;
@@ -547,8 +552,6 @@ class poller {
   template <typename T>
   void set_send_callback(const T &s, const std::function<void(void)> &c) {
     std::unique_lock<std::mutex> lock(mutex_events_);
-
-    if (events_.find(s.get_fd()) == events_.end()) return;
 
     auto &specific_event = events_[s.get_fd()];
     specific_event.unwatch_ = false;
@@ -562,10 +565,11 @@ class poller {
 
     if (events_.find(socket.get_fd()) == events_.end()) return;
 
-    auto &socket_to_unwatch = events_[socket.get_fd()];
+    auto &target = events_[socket.get_fd()];
 
-    if (socket_to_unwatch.is_there_a_callback_already_running()) {
-      socket_to_unwatch.unwatch_ = true;
+    if (target.is_executing_send_callback_ ||
+        target.is_executing_receive_callback_) {
+      target.unwatch_ = true;
       return;
     } else {
       auto iterator = events_.find(socket.get_fd());
@@ -588,6 +592,8 @@ class poller {
   // @value: class event representing the events monitored.
   std::unordered_map<int, event> events_;
 };
+
+#endif  // _WIN32
 
 // Poller singleton.
 static std::shared_ptr<poller> poller_g = nullptr;

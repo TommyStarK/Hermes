@@ -1,5 +1,13 @@
 language: cpp
 
+compiler:
+  - gcc
+  - clang
+
+os:
+  - linux
+  - osx
+  
 env:
     global:
         - CMAKE_VERSION="cmake-3.4.0-Linux-x86_64"
@@ -14,9 +22,6 @@ addons:
             - g++-5
             - gcc-5
             - wget
-
-compiler:
-  - gcc
 
 before_install:
     - wget https://cmake.org/files/v3.4/cmake-3.4.0-Linux-x86_64.tar.gz --no-check-certificate
