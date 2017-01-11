@@ -1,16 +1,80 @@
 # Hermes documentation
 
+
 Hermes is a lightweight, cross-platform, asynchronous, C++11 network library. Hermes provides features for either
-TCP/UDP server or TCP/UDP client. Clients and servers works asynchronously based on a asynchronous I/O model.
+TCP/UDP server or TCP/UDP client. Clients and servers work asynchronously based on a asynchronous I/O model.
+
 
 ## Hermes TCP API
 
+
 Using the Hermes TCP API, you can easily create either asynchronous tcp client or asynchronous tcp server.
 
-### server
+
+### Socket:
 
 
-#### Methods
+The TCP socket is a simple abstraction to unix and windows socket. It provides the low-level
+TCP socket features.
+
+```cpp
+  #include "Hermes.hpp"
+
+  using namespace hermes::network::tcp;
+
+  // Default constructor.
+  socket(void);
+
+  // Create a socket from an existing file descriptor.
+  socket(int fd, const std::string &host, unsigned int port);
+
+  // Move constructor.
+  socket(socket&& socket);
+
+  // operator
+  bool operator==(const socket &socket) const;
+
+  //
+  // Server operations
+  //
+
+  // Assign a name to the socket.
+  void bind(const std::string &host, unsigned int port);
+
+  // Mark the socket as a passive socket.
+  void listen(unsigned int backlog = hermes::tools::BACKLOG);
+
+  // Accept a new connection.
+  socket accept(void);
+
+  //
+  // Client operations
+  //
+
+  // Connect to the given host and port.
+  void connect(const std::string &host, unsigned int port);
+
+  // Send data.
+  void send(const std::string &data);
+  void send(std::vector<char> data, std::size_t size);
+
+  // Read data.
+  std::vector<char> receive(std::size_t size_to_read = hermes::tools::BUFFER_SIZE);
+
+  //
+  // Common operations.
+  //
+
+  // Close the file descriptor associated to the socket.
+  void close(void);
+
+```
+
+
+### Server
+
+
+#### Methods:
 
 
 ```cpp
@@ -22,10 +86,10 @@ Using the Hermes TCP API, you can easily create either asynchronous tcp client o
   server(void);
 
   // Returns true or false whether the server is already running.
-  bool is_running(void);
+  bool is_running(void) const;
 
   // Set the callback to be executed on a new connection. Represents the server behavior.
-  // A callback must be provided using the 'on_connection' function before running the server.
+  // A callback must be provided using the 'on_connection' method before running the server.
   void on_connection(const std::function<void(const std::shared_ptr<client> &)> &callback);
 
   // Run the server on the given host an service.
@@ -84,10 +148,11 @@ Using the Hermes TCP API, you can easily create either asynchronous tcp client o
 
 ```
 
-### client
+### Client
 
 
-#### Methods
+#### Methods:
+
 
 ```cpp
   #include "Hermes.hpp"
@@ -98,18 +163,19 @@ Using the Hermes TCP API, you can easily create either asynchronous tcp client o
   client(void);
 
   // Move constructor.
-  client(socket&&);
+  client(socket&& socket);
 
   // Returns true or false whether the client is connected.
-  bool is_connected(void);
+  bool is_connected(void) const;
 
   // Returns the client's socket.
-  const socket &get_socket(void);
+  const socket &get_socket(void) const;
 
   // Connect the client to the given host and service.
   void connect(const std::string &host, unsigned int port);
 
   // Disconnect the client.
+  // Disconnect method is call in the destructor.
   void disconnect();
 
   // Asynchronous send operation.
