@@ -144,18 +144,11 @@ SCENARIO("testing tcp socket: client operations") {
 //
 SCENARIO("testing tcp client") {
   WHEN("using default constructor and move constructor") {
+    tools::TIMEOUT = 0;
+
     tcp::client client;
-    std::shared_ptr<poller> poller;
-    poller = get_poller();
 
     REQUIRE(!client.is_connected());
-    REQUIRE(!poller->has<tcp::socket>(client.get_socket()));
-
-    tcp::socket socket;
-    tcp::client new_c(std::move(socket));
-
-    REQUIRE(new_c.is_connected());
-    REQUIRE(poller->has<tcp::socket>(new_c.get_socket()));
     set_poller(nullptr);
   }
 }
@@ -165,10 +158,11 @@ SCENARIO("testing tcp client") {
 //
 SCENARIO("testing tcp server") {
   WHEN("constructing a tcp server") {
+    tools::TIMEOUT = 0;
+
     tcp::server server;
 
     REQUIRE(!server.is_running());
-    server.stop();
     set_poller(nullptr);
   }
 }
@@ -178,6 +172,8 @@ SCENARIO("testing tcp server") {
 //
 SCENARIO("testing poller") {
   WHEN("testing basic features") {
+    tools::TIMEOUT = 0;
+
     REQUIRE(poller_g == nullptr);
     std::shared_ptr<poller> poller;
     poller = get_poller();

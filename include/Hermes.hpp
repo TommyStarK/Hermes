@@ -4,6 +4,7 @@
 #include <WinSock2.h>
 #else
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -29,15 +30,25 @@
 namespace hermes {
 
 namespace tools {
+// Feel free to modify any value of the following variables to fit to your
+// needs.
+
+// Default timeout value (milliseconds).
+// Set to infinite by default in order to allow the poller to wait indefinitely
+// for an event.
+#ifdef _WIN32
+static INT TIMEOUT = INFINITE;
+#else
+static int TIMEOUT = -1;
+#endif  // _WIN32
 
 // Default size for the maximum length to which the queue for pending
 // connections may grow.
-static unsigned int const BACKLOG = 100;
+static unsigned int BACKLOG = 100;
 // Default size used for buffers.
-static unsigned int const BUFFER_SIZE = 8096;
+static unsigned int BUFFER_SIZE = 8096;
 // Default number of concurrent threads supported by the system.
-// Threads are used as 'workers'.
-static unsigned int const THREADS_NBR = std::thread::hardware_concurrency();
+static unsigned int THREADS_NBR = std::thread::hardware_concurrency();
 
 // Format the error to provide an understandable output.
 std::string format_error(const std::string &msg) {
@@ -52,7 +63,8 @@ std::string format_error(const std::string &msg) {
 #define __DISPLAY_ERROR__(error) std::cerr << format_error(error) << std::endl;
 
 // A thread pool waiting for jobs for concurrent execution.
-// Jobs are enqueued in a synchronized queue. Each worker is waiting for job.
+// Jobs are enqueued in a synchronized queue. Each worker (thread) is waiting
+// for process a job.
 class workers {
  public:
   explicit workers(unsigned int workers_nbr = THREADS_NBR) : stop_(false) {
@@ -111,7 +123,7 @@ class workers {
     condition_.notify_all();
   }
 
-  // Returns true or false whether workers are working.
+  // Returns true or false whether the workers are working.
   bool are_working(void) const { return !stop_; }
 
  private:
@@ -139,10 +151,10 @@ class workers {
   // Condition variable to synchronize the threads.
   std::condition_variable condition_;
 
-  // Thread pool
+  // thread pool.
   std::vector<std::thread> workers_;
 
-  // Contains pending job
+  // Contains pending jobs.
   std::queue<std::function<void(void)>> job_queue_;
 };
 
@@ -156,18 +168,26 @@ namespace tcp {
 
 #ifdef _WIN32
 
-//
+// Windows tcp socket.
+// Provides synchronous tream-oriented socket functionality.
 class socket {
  public:
   socket() {}
   ~socket() = default;
-  int fd_;
-  int get_fd() const { return fd_; }
+
+ public:
+  //
+  SOCKET get_fd() const { return fd_; }
+
+ private:
+  //
+  SOCKET fd_;
 };
 
 #else
 
-//
+// Unix tcp socket.
+// Provides synchronous stream-oriented socket functionality.
 class socket {
  public:
   // Basic constructor.
@@ -177,8 +197,7 @@ class socket {
   socket(int fd, const std::string &host, unsigned int port)
       : fd_(fd), host_(host), port_(port), is_socket_bound_(false) {}
 
-  // A move constructor has been implemented allowing to construct a socket
-  // from a rvalue of an existing socket.
+  // Move constructor.
   socket(socket &&socket)
       : fd_(std::move(socket.get_fd())),
         host_(socket.get_host()),
@@ -221,7 +240,7 @@ class socket {
     is_socket_bound_ = true;
   }
 
-  // Mark the socket as passive socket.
+  // Mark the socket as a passive socket.
   void listen(unsigned int backlog = tools::BACKLOG) {
     if (!is_socket_bound_)
       __LOGIC_ERROR__(
@@ -364,7 +383,7 @@ class socket {
  private:
   // With given Internet host and service, get_addr_info() tries to retrieve
   // a list of structures containing each, a network address that matches
-  // host and port.
+  // host and service.
   void get_addr_info(void) {
     int status;
     struct addrinfo hints;
@@ -382,7 +401,7 @@ class socket {
     if (infos) ::memmove(&addrinfo_, infos, sizeof(*infos));
   }
 
-  // Create an endpoint for communication.
+  // Creates an endpoint for communication.
   void create_socket(void) {
     if (fd_ != -1) return;
 
@@ -426,25 +445,39 @@ class socket {
 namespace udp {
 
 #ifdef _WIN32
-//
 
+// Windows udp socket.
+// Provides synchronous datagram-oriented socket functionality.
 class socket {
  public:
   socket() {}
   ~socket() = default;
-  int fd_;
-  int get_fd() const { return fd_; }
+
+ public:
+  // Returns the file descriptor associated to the socket.
+  SOCKET get_fd() const { return fd_; }
+
+ private:
+  // File descriptor associated to the socket.
+  SOCKET fd_;
 };
 
 #else
 
-//
+// Unix udp socket.
+// Provides synchronous datagram-oriented socket functionality.
 class socket {
  public:
   socket() {}
   ~socket() = default;
-  int fd_;
+
+ public:
+  // Returns the file descriptor associated to the socket.
   int get_fd() const { return fd_; }
+
+ private:
+  // File descriptor associated to the socket.
+  int fd_;
 };
 
 #endif  // _WIN32
@@ -452,70 +485,158 @@ class socket {
 }  // namespace udp
 }  // namespace network
 
-// Event
-//
+#ifdef _WIN32
+
+// Windows event model.
 class event {
  public:
-  event(void)
-      : unwatch_(false),
-        is_executing_send_callback_(false),
-        is_executing_receive_callback_(false),
-        send_callback_(nullptr),
-        receive_callback_(nullptr) {}
+  event(void) {}
+  ~event(void) = default;
+};
+
+// A Windows polling wrapper.
+class poller {
+ public:
+  poller(void) {}
+  ~poller(void) {}
+
+ private:
+  // A map containing:
+  // @key: file descriptor (SOCKET under Windows).
+  // @value: class event representing the event monitored.
+  std::unordered_map<SOCKET, event> events_;
+};
+
+#else
+
+using namespace hermes::tools;
+
+// Unix event model.
+// The event object needs to be associated to a file descriptor refering to a
+// socket. It allows to store callbacks which must be processed if the socket is
+// ready for a reading or a writting operation.
+// Furthermore, the event model allows to know if we are currently executing a
+// specific callback.
+// The event model owns a pollfd structure which will be used in the polling
+// model. Event objects can update their own pollfd structure according the
+// callbacks defined and the potential current execution of one of these
+// callbacks.
+class event {
+ public:
+  // Constructs a default event model.
+  event(void) : unwatch_(false), pollfd_({-1, 0, 0}) {
+    on_send_.running = false;
+    on_send_.callback = nullptr;
+    on_receive_.running = false;
+    on_receive_.callback = nullptr;
+  }
 
   ~event(void) = default;
+
+ public:
+  // Structure containing information on a callback for a specific event.
+  struct event_callback_info {
+    // Boolean to know if the associated callback is currently running.
+    std::atomic_bool running;
+
+    // the callback stored which will be executed.
+    std::function<void(void)> callback;
+  };
+
+ public:
+  // Returns true or false if there is a specific events defined.
+  bool has(void) const { return pollfd_.events != 0; }
+
+  // Updates the pollfd structure.
+  //
+  // Sets the value of the file descriptor in the pollfd structure.
+  // The variable 'event' of the pollfd structure is set with either POLLIN if
+  // we are waiting for a read operation, or POLLOUT for a read operation
+  void update(int fd) {
+    if (unwatch_ || (!on_receive_.callback && !on_send_.callback)) return;
+
+    pollfd_.fd = fd;
+
+    if (on_send_.callback && !on_send_.running) pollfd_.events |= POLLOUT;
+
+    if (on_receive_.callback && !on_receive_.running) pollfd_.events |= POLLIN;
+  }
+
+  // Returns a reference on the pollfd structure.
+  struct pollfd &get_poll_struct(void) {
+    return pollfd_;
+  }
+
+  // Reset the pollfd structure.
+  void reset_poll_struct(void) {
+    pollfd_.fd = -1;
+    pollfd_.events = 0;
+    pollfd_.revents = 0;
+  }
 
  public:
   // Boolean to know if the poller should stop monitoring this file descriptor.
   std::atomic_bool unwatch_;
 
-  // Boolean to know if we are executing a callback after writting data.
-  std::atomic_bool is_executing_send_callback_;
+  //
+  struct pollfd pollfd_;
 
-  // Boolean to know if we are executing a callback after reading data.
-  std::atomic_bool is_executing_receive_callback_;
+  // receive callback.
+  event_callback_info on_send_;
 
-  // The callback to execute if the file descriptor is ready for sending data.
-  std::function<void(void)> send_callback_;
-
-  // The callback to execute if the file descriptor is ready for receiving data.
-  std::function<void(void)> receive_callback_;
+  // receive callback
+  event_callback_info on_receive_;
 };
 
-#ifdef _WIN32
-
-//
-class poller {
- public:
-  poller(void) {}
-  ~poller(void) {}
-};
-
-#else
-
-// A Polling wrapper.
+// A Unix polling wrapper.
 // Poller provides an access to polling for any given socket. The poller is
-// using a threads pool as workers to execute the callback provided when the
+// using a thread pool as workers to execute the callback provided when the
 // socket is available for the expected event.
+// Poller associates the file descriptors of the monitored sockets with 'event'
+// objects to store the callbacks provided. In order to offer an asynchronous
+// I/O model, we are waiting using poll() for one of a set of file descriptors
+// to become ready to perform an I/O operation.
+// When a file descriptor is ready, a job is enqueued in the thread pool in
+// order to perform the associated callback of this operation.
 class poller {
  public:
   // Construct an empty polling model.
-  poller(void) : stop_(false) {}
+  poller(void) : stop_(false), notification_pipe_{-1, -1} {
+    if (::pipe(notification_pipe_) == -1)
+      __RUNTIME_ERROR__("poller::poller: Error pipe() failed.");
+
+    poll_master_ = std::thread([this]() {
+      while (!stop_) {
+        synchronize_events();
+
+        if (::poll(const_cast<struct pollfd *>(poll_structs_.data()),
+                   poll_structs_.size(), TIMEOUT) > 0)
+          process_detected_events();
+      }
+    });
+  }
 
   poller(const poller &) = delete;
 
   poller &operator=(const poller &) = delete;
 
-  // Clear the poller.
-  // Any workers will need to be stopped.
+  // Stop the polling model.
+  //
+  // Workers should stop working and the poll main thread is joined.
   ~poller(void) {
     stop_ = true;
+    notify_poll();
+    poll_master_.join();
     workers_.stop();
+    // close the read end of the notification pipe.
+    ::close(notification_pipe_[0]);
+    // close the write end of the notification pipe.
+    ::close(notification_pipe_[1]);
   }
 
  public:
   // Check if we are monitoring a specific socket.
-  // Returns true if the socket is currently watched.
+  // Returns true if the socket is currently monitored.
   template <typename T>
   bool has(const T &s) {
     return events_.find(s.get_fd()) == events_.end() ? false : true;
@@ -530,32 +651,45 @@ class poller {
 
     auto &new_event = events_[socket.get_fd()];
     new_event.unwatch_ = false;
-    new_event.is_executing_send_callback_ = false;
-    new_event.is_executing_receive_callback_ = false;
-    new_event.send_callback_ = nullptr;
-    new_event.receive_callback_ = nullptr;
+    new_event.on_receive_.running = false;
+    new_event.on_receive_.callback = nullptr;
+    new_event.on_send_.running = false;
+    new_event.on_send_.callback = nullptr;
+    notify_poll();
   }
 
-  // Set a callback to the given socket which will be executed if there is data
-  // to read on this socket.
+  // Set a read event to monitor on the given socket.
+  //
+  // param:
+  // - const T& s: a reference on a const socket of type T.
+  // - const std::function<void(void)> &c: a reference on a const function
+  // object representing the callback to perform when there will be
+  // data to read on the socket.
   template <typename T>
-  void set_receive_callback(const T &s, const std::function<void(void)> &c) {
+  void wait_for_read(const T &s, const std::function<void(void)> &c) {
     std::unique_lock<std::mutex> lock(mutex_events_);
 
     auto &specific_event = events_[s.get_fd()];
     specific_event.unwatch_ = false;
-    specific_event.receive_callback_ = c;
+    specific_event.on_receive_.callback = c;
+    notify_poll();
   }
 
-  // Set a callback to the given socket which will be executed if writting now
-  // will not block.
+  // Set a write event to monitor on the given socket.
+  //
+  // param:
+  // - const T& s: a reference on a const socket of type T.
+  // - const std::function<void(void)> &c: a reference on a const function
+  // object representing the callback to perform when writting data on the
+  // socket will not block.
   template <typename T>
-  void set_send_callback(const T &s, const std::function<void(void)> &c) {
+  void wait_for_write(const T &s, const std::function<void(void)> &c) {
     std::unique_lock<std::mutex> lock(mutex_events_);
 
     auto &specific_event = events_[s.get_fd()];
     specific_event.unwatch_ = false;
-    specific_event.send_callback_ = c;
+    specific_event.on_send_.callback = c;
+    notify_poll();
   }
 
   // Stop monitoring the given socket.
@@ -567,13 +701,98 @@ class poller {
 
     auto &target = events_[socket.get_fd()];
 
-    if (target.is_executing_send_callback_ ||
-        target.is_executing_receive_callback_) {
+    if (target.on_receive_.running || target.on_send_.running) {
       target.unwatch_ = true;
       return;
     } else {
       auto iterator = events_.find(socket.get_fd());
       events_.erase(iterator);
+    }
+    notify_poll();
+  }
+
+ private:
+  // Force poll to wake up by writting on the file descriptor which refers to
+  // the write end of the pipe.
+  void notify_poll() { (void)::write(notification_pipe_[1], "T", 1); }
+
+  // Clear notification pipe by reading out data of the pipe.
+  void clear_notification_pipe() {
+    char buffer[1024];
+    (void)::read(notification_pipe_[0], buffer, 1024);
+  }
+
+  // Synchronize the differents events monitored by the poller. Fill the vector
+  // of pollfd structures with all information for the file descriptors waiting
+  // for an I/O operation.
+  void synchronize_events(void) {
+    std::unique_lock<std::mutex> lock(mutex_events_);
+
+    poll_structs_.clear();
+    for (auto &event : events_) {
+      event.second.update(event.first);
+      if (event.second.has()) {
+        poll_structs_.push_back(std::move(event.second.get_poll_struct()));
+        event.second.reset_poll_struct();
+      }
+    }
+    poll_structs_.push_back({notification_pipe_[0], POLLIN, 0});
+  }
+
+  // Handles a specific detected event for a given file descriptor by adding
+  // the execution of the dedicated callback to the job queue.
+  void handle_event(int file_descriptor, event &event, short revent) {
+    auto fd = file_descriptor;
+    bool pollin = revent & POLLIN;
+    auto callback =
+        pollin ? event.on_receive_.callback : event.on_send_.callback;
+
+    if (pollin)
+      event.on_receive_.running = true;
+    else
+      event.on_send_.running = true;
+
+    workers_.enqueue_job([=]() {
+      callback();
+
+      std::unique_lock<std::mutex> lock(mutex_events_);
+      if (events_.find(fd) == events_.end()) return;
+
+      auto &event = events_.find(fd)->second;
+
+      if (pollin) {
+        event.on_receive_.running = false;
+        if (event.unwatch_ && !event.on_send_.running)
+          events_.erase(events_.find(fd));
+      } else {
+        event.on_send_.running = false;
+        if (event.unwatch_ && !event.on_receive_.running)
+          events_.erase(events_.find(fd));
+      }
+    });
+  }
+
+  // Processes the events detected in result of the poll operation.
+  void process_detected_events(void) {
+    std::unique_lock<std::mutex> lock(mutex_events_);
+
+    for (const auto &result : poll_structs_) {
+      if (result.fd == notification_pipe_[0] && result.revents & POLLIN) {
+        clear_notification_pipe();
+        continue;
+      }
+
+      if (events_.find(result.fd) == events_.end()) continue;
+
+      auto &socket = events_.find(result.fd)->second;
+
+      if (result.revents & POLLOUT && socket.on_send_.callback &&
+          !socket.on_send_.running)
+        handle_event(result.fd, socket, result.revents);
+
+      if (result.revents & POLLIN && socket.on_receive_.callback &&
+          !socket.on_receive_.running)
+        handle_event(result.fd, socket, result.revents);
     }
   }
 
@@ -581,27 +800,37 @@ class poller {
   // Boolean to know if the poller should stop.
   std::atomic_bool stop_;
 
-  // Threads pool to execute callbacks.
+  // thread pool to execute callbacks.
   tools::workers workers_;
+
+  // Main thread.
+  std::thread poll_master_;
 
   // Mutex to synchronize the events monitored.
   std::mutex mutex_events_;
 
+  // Unidirectional data channel used to notify poll to start polling.
+  int notification_pipe_[2];
+
   // A map containing:
   // @key: file descriptor
-  // @value: class event representing the events monitored.
+  // @value: class event representing the event monitored.
   std::unordered_map<int, event> events_;
+
+  // An array of pollfd structures on which we will poll waiting for an I/O
+  // operation.
+  std::vector<struct pollfd> poll_structs_;
 };
 
 #endif  // _WIN32
 
-// Poller singleton.
+// Poller singleton default instance.
 static std::shared_ptr<poller> poller_g = nullptr;
 
-// Setter.
+// Setter poller instance.
 void set_poller(const std::shared_ptr<poller> &s) { poller_g = s; }
 
-// Getter.
+// Getter poller instance.
 const std::shared_ptr<poller> &get_poller(void) {
   if (!poller_g) poller_g = std::make_shared<poller>();
   return poller_g;
@@ -680,7 +909,7 @@ class client {
     send_requests_.pop();
 
     if (send_requests_.empty())
-      poller_->set_send_callback<tcp::socket>(socket_, nullptr);
+      poller_->wait_for_write<tcp::socket>(socket_, nullptr);
 
     if (!success) disconnect();
 
@@ -710,7 +939,7 @@ class client {
     receive_requests_.pop();
 
     if (receive_requests_.empty())
-      poller_->set_receive_callback<tcp::socket>(socket_, nullptr);
+      poller_->wait_for_read<tcp::socket>(socket_, nullptr);
 
     if (!success) disconnect();
 
@@ -734,8 +963,8 @@ class client {
 
     if (callback) {
       send_requests_.push(std::make_pair(data, callback));
-      poller_->set_send_callback<tcp::socket>(
-          socket_, std::bind(&client::on_send, this));
+      poller_->wait_for_write<tcp::socket>(socket_,
+                                           std::bind(&client::on_send, this));
     } else {
       __DISPLAY_ERROR__(
           "tcp::client::async_send: You must provide a callback in order to "
@@ -754,8 +983,8 @@ class client {
 
     if (callback) {
       receive_requests_.push(std::make_pair(size, callback));
-      poller_->set_receive_callback<tcp::socket>(
-          socket_, std::bind(&client::on_receive, this));
+      poller_->wait_for_read<tcp::socket>(socket_,
+                                          std::bind(&client::on_receive, this));
     } else {
       __DISPLAY_ERROR__(
           "tcp::client::async_send: You must provide a callback in order to "
@@ -766,6 +995,12 @@ class client {
  private:
   // Client's socket.
   socket socket_;
+
+  // Boolean to know if the client is already connected.
+  std::atomic_bool connected_;
+
+  // A smart pointer on the polling instance.
+  std::shared_ptr<poller> poller_;
 
   // Mutex to synchronize the queue of send requests.
   std::mutex send_requests_mutex_;
@@ -778,12 +1013,6 @@ class client {
 
   // A queue containing receive requests.
   std::queue<std::pair<std::size_t, async_receive_callback>> receive_requests_;
-
-  // Boolean to know if the client is already connected.
-  std::atomic_bool connected_;
-
-  // A smart pointer on the events watcher singleton.
-  std::shared_ptr<poller> poller_;
 };
 
 // TCP server.
@@ -801,14 +1030,14 @@ class server {
   // Returns true or false whether the server is running.
   bool is_running(void) const { return running_; }
 
-  // This function provides a callback that the server executes on a new
-  // connection.
+  // This function provides a callback that the server stores and will execute
+  // on a new connection.
   void on_connection(
       const std::function<void(const std::shared_ptr<client> &)> &callback) {
     callback_ = callback;
   }
 
-  // Start the server.
+  // Runs the server on the giben host and port.
   void run(const std::string &host, unsigned int port) {
     if (running_)
       __LOGIC_ERROR__("tcp::server::run: Server is already running.");
@@ -822,8 +1051,8 @@ class server {
     socket_.bind(host, port);
     socket_.listen();
     poller_->add<tcp::socket>(socket_);
-    poller_->set_receive_callback<tcp::socket>(
-        socket_, std::bind(&server::on_accept, this));
+    poller_->wait_for_read<tcp::socket>(socket_,
+                                        std::bind(&server::on_accept, this));
     running_ = true;
   }
 
@@ -840,7 +1069,7 @@ class server {
   }
 
  private:
-  // Function executed when a client is trying to connect to our server.
+  // Function executed when a client is trying to connect to this server.
   void on_accept(void) {
     std::unique_lock<std::mutex> lock(mutex_);
 
@@ -864,10 +1093,10 @@ class server {
   // Boolean to know if the server is running.
   std::atomic_bool running_;
 
-  // A smart pointer on the events watcher.
+  // A smart pointer on the polling instance.
   std::shared_ptr<poller> poller_;
 
-  // A set of clients connected to our server.
+  // A set of clients connected to this server.
   std::unordered_set<std::shared_ptr<client>> clients_;
 
   // A callback executed when a new client is accepted.
@@ -878,31 +1107,31 @@ class server {
 
 namespace udp {
 
-//
+// UDP client.
 class client {
  public:
   client(void) : poller_(get_poller()) {}
   ~client() {}
 
  private:
-  //
+  // Client's socket.
   socket socket_;
 
-  //
+  // A smart pointer on the polling instance.
   std::shared_ptr<poller> poller_;
 };
 
-//
+// UDP server.
 class server {
  public:
   server(void) : poller_(get_poller()) {}
   ~server(void) {}
 
  private:
-  //
+  // Server's socket.
   socket socket_;
 
-  //
+  // A smart pointer on the polling instance.
   std::shared_ptr<poller> poller_;
 };
 
