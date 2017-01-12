@@ -1,16 +1,17 @@
 # Hermes documentation
 
 
-Hermes is a lightweight, cross-platform, asynchronous, C++11 network library. Hermes provides features for either
-TCP/UDP server or TCP/UDP client. Clients and servers work asynchronously based on a asynchronous I/O model.
-In order to use Hermes, you just need to include the `Hermes.hpp` header in your code.
+Hermes is a lightweight, cross-platform, asynchronous, C++11 network library. Hermes provides an user-friendly API
+with which you can easily create server or client following the TCP or the UDP protocol. Hermes is based on a polling model
+using a thread pool in order to offer an asynchronous I/O model to handle events between the server and the clients connected.
+Server and client work asynchronously and the public Hermes API allows only to perform asynchronous operations.
+To use Hermes, you just need to include the `Hermes.hpp` header in your code.
 
 
 - compiling using g++:
 
 
-Assuming you want to compile a file containing code using Hermes features, you just need to run the following command:
-
+Assuming you want to compile a file containing some code using Hermes features, you just need to run the following command:
 
 ```bash
   g++ -std=c++11 your_file.cpp -pthread -o binary_name
@@ -20,14 +21,14 @@ Assuming you want to compile a file containing code using Hermes features, you j
 ## Hermes TCP API
 
 
-Thanks to the Hermes TCP API, you can easily create either asynchronous TCP server or client.
-s
+Thanks to the Hermes TCP API, you can easily create either TCP server or TCP client.
 
 ### Socket:
 
-
-The TCP socket is a simple abstraction to unix and windows socket. It provides the low-level
-TCP socket features.
+Basic abstraction of the TCP socket features for unix and windows socket.
+The TCP socket is able to perform the basic server-side and client-side operations such as binding the socket and
+listening on it for the server, or connecting the socket to a given host/service to send or receive data for the client.
+Every operation of the TCP socket is synchronous.
 
 ```cpp
   #include "Hermes.hpp"
@@ -100,7 +101,7 @@ TCP socket features.
   // Returns true or false whether the server is already running.
   bool is_running(void) const;
 
-  // Set the callback to be executed on a new connection. Represents the server behavior.
+  // Provide the callback which will be executed on a new connection. Represents the server behavior.
   // A callback must be provided using the 'on_connection' method before running the server.
   void on_connection(const std::function<void(const std::shared_ptr<client> &)> &callback);
 
@@ -165,6 +166,9 @@ TCP socket features.
 
 #### Methods:
 
+- incoming:
+  - asynchronous connection.
+  - disconnection callback.
 
 ```cpp
   #include "Hermes.hpp"
