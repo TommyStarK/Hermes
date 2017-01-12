@@ -203,8 +203,8 @@ class socket {
       : fd_(std::move(socket.get_fd())),
         host_(socket.get_host()),
         port_(socket.get_port()),
-        v_addrinfo_(std::move(socket.get_struct_addrinfo())),
-        is_socket_bound_(false) {
+        is_socket_bound_(false),
+        info_(std::move(socket.get_struct_addrinfo())) {
     socket.fd_ = -1;
   }
 
@@ -223,20 +223,17 @@ class socket {
 
   // Assign a name to the socket.
   void bind(const std::string &host, unsigned int port) {
-    int yes = 1;
-    host_ = host;
-    port_ = port;
-    get_addr_info();
-    create_socket();
-
     if (is_socket_bound_)
       __LOGIC_ERROR__("tcp::socket::bind: Socket is  already bound to" + host_ +
                       ":" + std::to_string(port_));
 
+    int yes = 1;
+    create_socket(host, port);
+
     if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
       __RUNTIME_ERROR__("tcp::socket::bind: setsockopt() failed.");
 
-    if (::bind(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1)
+    if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1)
       __RUNTIME_ERROR__("tcp::socket::bind: bind() failed.");
     is_socket_bound_ = true;
   }
@@ -293,12 +290,9 @@ class socket {
           std::to_string(port_) +
           ". Invalid operation for a socket planned for a server application.");
 
-    host_ = host;
-    port_ = port;
-    get_addr_info();
-    create_socket();
+    create_socket(host, port);
 
-    if (::connect(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1)
+    if (::connect(fd_, info_.ai_addr, info_.ai_addrlen) == -1)
       __RUNTIME_ERROR__("tcp::socket::connect: connect() failed.");
   }
 
@@ -359,6 +353,7 @@ class socket {
       if (::close(fd_) == -1)
         __RUNTIME_ERROR__("tcp::socket::close: close() failed.");
     }
+
     fd_ = -1;
   }
 
@@ -378,45 +373,41 @@ class socket {
   // Returns a reference on a structure containing a network address used by the
   // socket.
   struct addrinfo &get_struct_addrinfo(void) {
-    return v_addrinfo_;
+    return info_;
   }
 
  private:
-  // With given Internet host and service, get_addr_info() tries to retrieve
-  // a list of structures containing each, a network address that matches
-  // host and service.
-  void get_addr_info(void) {
+  // Creates an endpoint for communication.
+  void create_socket(const std::string &host, unsigned int port) {
+    if (fd_ != -1) return;
+
     int status;
     struct addrinfo hints;
-    struct addrinfo *infos;
+    struct addrinfo *addr_infos;
 
+    host_ = host;
+    port_ = port;
     ::memset(&hints, 0, sizeof(hints));
-    ::memset(&addrinfo_, 0, sizeof(addrinfo_));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
     if ((status = ::getaddrinfo(host_.c_str(), std::to_string(port_).c_str(),
-                                &hints, &infos)) != 0)
+                                &hints, &addr_infos)) != 0)
       __RUNTIME_ERROR__("tcp::socket::get_addr_info: getaddrinfo() failed.");
 
-    if (infos) ::memmove(&addrinfo_, infos, sizeof(*infos));
-  }
-
-  // Creates an endpoint for communication.
-  void create_socket(void) {
-    if (fd_ != -1) return;
-
-    for (auto p = &addrinfo_; p != NULL; p = p->ai_next) {
+    for (auto p = addr_infos; p != NULL; p = p->ai_next) {
       if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
         continue;
 
-      ::memset(&v_addrinfo_, 0, sizeof(*p));
-      ::memcpy(&v_addrinfo_, p, sizeof(*p));
+      ::memset(&info_, 0, sizeof(*p));
+      ::memcpy(&info_, p, sizeof(*p));
       break;
     }
 
-    if (fd_ == -1)
-      __RUNTIME_ERROR__("tcp::socket::create_socket: socket failed().");
+    if (fd_ == -1) {
+      if (addr_infos) ::freeaddrinfo(addr_infos);
+      __RUNTIME_ERROR__("tcp::socket::create_socket: socket() failed.");
+    }
   }
 
  private:
@@ -429,14 +420,11 @@ class socket {
   // Socket port.
   int port_;
 
-  // List of structures containing each, a network address.
-  struct addrinfo addrinfo_;
-
-  // Network address used by the socket.
-  struct addrinfo v_addrinfo_;
-
   // Boolean to know if the socket is bound.
   bool is_socket_bound_;
+
+  // Network address used by the socket.
+  struct addrinfo info_;
 };
 
 #endif  // _WIN32
@@ -495,10 +483,7 @@ class socket {
 
   // Initialize a basic datagram socket.
   void init_datagram_socket(const std::string &host, unsigned int port) {
-    host_ = host;
-    port_ = port;
-    get_addr_info();
-    create_socket();
+    create_socket(host, port);
   }
 
   // Send data to another socket.
@@ -521,7 +506,7 @@ class socket {
 
     init_datagram_socket(host, port);
 
-    if (::bind(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1)
+    if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1)
       __RUNTIME_ERROR__("udp::socket::bind: bind() failed.");
     is_socket_bound_ = true;
   }
@@ -544,46 +529,46 @@ class socket {
       if (::close(fd_) == -1)
         __RUNTIME_ERROR__("tcp::socket::close: close() failed.");
     }
+
     fd_ = -1;
   }
 
  private:
-  // Fill a struct addrinfo with a network address that matches host and
-  // service.
-  void get_addr_info(void) {
-    int status;
-    struct addrinfo hints;
-    struct addrinfo *infos;
-
-    ::memset(&hints, 0, sizeof(hints));
-    ::memset(&addrinfo_, 0, sizeof(addrinfo_));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_flags = AI_PASSIVE;
-
-    if ((status =
-             ::getaddrinfo(!host_.compare("") ? NULL : host_.c_str(),
-                           std::to_string(port_).c_str(), &hints, &infos)) != 0)
-      __RUNTIME_ERROR__("udp::socket::get_addr_info: getaddrinfo() failed.");
-
-    if (infos) ::memmove(&addrinfo_, infos, sizeof(*infos));
-  }
-
-  // Create an endpoint for communication.
-  void create_socket(void) {
+  // Create an endpoint for communication with the given host/port.
+  void create_socket(const std::string &host, unsigned int port) {
     if (fd_ != -1) return;
 
-    for (auto p = &addrinfo_; p != NULL; p = p->ai_next) {
-      if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
+    int status;
+    struct addrinfo hints;
+    struct addrinfo *addr_infos;
+
+    host_ = host;
+    port_ = port;
+    ::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = IPPROTO_UDP;
+    hints.ai_flags = AI_PASSIVE;
+
+    if ((status = ::getaddrinfo(!host_.compare("") ? NULL : host_.c_str(),
+                                std::to_string(port_).c_str(), &hints,
+                                &addr_infos)) != 0)
+      __RUNTIME_ERROR__("udp::socket::get_addr_info: getaddrinfo() failed.");
+
+    for (auto p = addr_infos; p != NULL; p = p->ai_next) {
+      if ((fd_ = ::socket(p->ai_family, SOCK_DGRAM | SOCK_CLOEXEC,
+                          IPPROTO_UDP)) == -1)
         continue;
 
-      ::memset(&v_addrinfo_, 0, sizeof(*p));
-      ::memcpy(&v_addrinfo_, p, sizeof(*p));
+      ::memset(&info_, 0, sizeof(*p));
+      ::memcpy(&info_, p, sizeof(*p));
       break;
     }
 
-    if (fd_ == -1)
-      __RUNTIME_ERROR__("tcp::socket::create_socket: socket failed().");
+    if (fd_ == -1) {
+      if (addr_infos) ::freeaddrinfo(addr_infos);
+      __RUNTIME_ERROR__("udp::socket::create_socket: socket() failed.");
+    }
   }
 
  private:
@@ -596,14 +581,11 @@ class socket {
   // Socket port.
   unsigned int port_;
 
-  // List of structures containing each, a network address.
-  struct addrinfo addrinfo_;
-
-  // Network address used by the socket.
-  struct addrinfo v_addrinfo_;
-
   // Boolean to know if the socket is bound.
   bool is_socket_bound_;
+
+  // Network address used by the socket.
+  struct addrinfo info_;
 };
 
 #endif  // _WIN32
