@@ -134,8 +134,8 @@ TCP socket features.
 
   void receive_callback(const std::shared_ptr<client> &client, bool success, std::vector<char> buffer) {
     if (success) {
-      std::cout << std::string(buffer.data());
-      client->async_send(std::string(buffer.data()), std::bind(&send_callback, client, std::placeholders::_1, std::placeholders::_2));
+      std::cout << buffer.data();
+      client->async_send(buffer, std::bind(&send_callback, client, std::placeholders::_1, std::placeholders::_2));
     } else {
       client->disconnect();
     }
@@ -215,7 +215,7 @@ TCP socket features.
 
   void receive_callback(client &client, bool success, std::vector<char> buffer) {
     if (success)
-      std::cout << std::string(buffer.data());
+      std::cout << buffer.data();
     else
       client.disconnect();
   }
