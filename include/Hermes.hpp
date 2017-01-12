@@ -45,11 +45,11 @@ static int TIMEOUT = -1;
 
 // Default size for the maximum length to which the queue for pending
 // connections may grow.
-static unsigned int BACKLOG = 100;
+static unsigned int const BACKLOG = 100;
 // Default size used for buffers.
-static unsigned int BUFFER_SIZE = 8096;
+static unsigned int const BUFFER_SIZE = 8096;
 // Default number of concurrent threads supported by the system.
-static unsigned int THREADS_NBR = std::thread::hardware_concurrency();
+static unsigned int const THREADS_NBR = std::thread::hardware_concurrency();
 
 // Format the error to provide an understandable output.
 std::string format_error(const std::string &msg) {
@@ -95,7 +95,7 @@ class workers {
 
   workers &operator=(const workers &) = delete;
 
-  ~workers() { stop(); }
+  ~workers(void) { stop(); }
 
  public:
   // Stop the thread pool.
@@ -130,7 +130,7 @@ class workers {
  private:
   // Check the job queue to know if there is a job waiting. If that is the case
   // it returns the job and removes it from the queue.
-  std::function<void(void)> retrieve_job() {
+  std::function<void(void)> retrieve_job(void) {
     std::unique_lock<std::mutex> lock(mutex_job_queue_);
 
     condition_.wait(lock, [&] { return stop_ || !job_queue_.empty(); });
@@ -173,12 +173,12 @@ namespace tcp {
 // Provides synchronous tream-oriented socket functionality.
 class socket {
  public:
-  socket() {}
-  ~socket() = default;
+  socket(void) {}
+  ~socket(void) = default;
 
  public:
   //
-  SOCKET get_fd() const { return fd_; }
+  SOCKET get_fd(void) const { return fd_; }
 
  private:
   //
@@ -451,12 +451,12 @@ namespace udp {
 // Provides synchronous datagram-oriented socket functionality.
 class socket {
  public:
-  socket() {}
-  ~socket() = default;
+  socket(void) {}
+  ~socket(void) = default;
 
  public:
   // Returns the file descriptor associated to the socket.
-  SOCKET get_fd() const { return fd_; }
+  SOCKET get_fd(void) const { return fd_; }
 
  private:
   // File descriptor associated to the socket.
@@ -469,12 +469,12 @@ class socket {
 // Provides synchronous datagram-oriented socket functionality.
 class socket {
  public:
-  socket() {}
-  ~socket() = default;
+  socket(void) {}
+  ~socket(void) = default;
 
  public:
   // Returns the file descriptor associated to the socket.
-  int get_fd() const { return fd_; }
+  int get_fd(void) const { return fd_; }
 
  private:
   // File descriptor associated to the socket.
@@ -715,10 +715,10 @@ class poller {
  private:
   // Force poll to wake up by writting on the file descriptor which refers to
   // the write end of the pipe.
-  void notify_poll() { (void)::write(notification_pipe_[1], "T", 1); }
+  void notify_poll(void) { (void)::write(notification_pipe_[1], "T", 1); }
 
   // Clear notification pipe by reading out data of the pipe.
-  void clear_notification_pipe() {
+  void clear_notification_pipe(void) {
     char buffer[1024];
     (void)::read(notification_pipe_[0], buffer, 1024);
   }
@@ -1112,7 +1112,7 @@ namespace udp {
 class client {
  public:
   client(void) : poller_(get_poller()) {}
-  ~client() {}
+  ~client(void) {}
 
  private:
   // Client's socket.
