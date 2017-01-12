@@ -469,7 +469,7 @@ class socket {
 // Provides synchronous datagram-oriented socket functionality.
 class socket {
  public:
-  socket(void) : fd_(-1), port_(0) {}
+  socket(void) : fd_(-1), host_(""), port_(0), is_socket_bound_(false) {}
 
   socket(const socket &) = delete;
 
@@ -483,21 +483,127 @@ class socket {
   // Returns the file descriptor associated to the socket.
   int get_fd(void) const { return fd_; }
 
+  // Returns the port associated to the socket.
+  unsigned int get_port(void) const { return port_; }
+
+  // Returns true if the socket is connected, false otherwise.
+  bool is_socket_bound(void) const { return is_socket_bound_; }
+
   //
-  int get_port(void) const { return port_; }
+  //  Client operations
+  //
+
+  // Initialize a basic datagram socket.
+  void init_datagram_socket(const std::string &host, unsigned int port) {
+    host_ = host;
+    port_ = port;
+    get_addr_info();
+    create_socket();
+  }
+
+  // Send data to another socket.
+  void sendto() {
+    if (fd_ == -1)
+      __LOGIC_ERROR__(
+          "udp::socket::sendto: Error you need to create a valid datagram "
+          "socket before sending data.");
+  }
+
+  //
+  // Server operations.
+  //
+
+  // Assign a name to the socket.
+  void bind(const std::string &host, unsigned int port) {
+    if (is_socket_bound_)
+      __LOGIC_ERROR__("udp::socket::bind: Socket is  already bound to" + host_ +
+                      ":" + std::to_string(port_));
+
+    init_datagram_socket(host, port);
+
+    if (::bind(fd_, v_addrinfo_.ai_addr, v_addrinfo_.ai_addrlen) == -1)
+      __RUNTIME_ERROR__("udp::socket::bind: bind() failed.");
+    is_socket_bound_ = true;
+  }
+
+  // Receive data from another socket.
+  void recvfrom() {
+    if (fd_ == -1)
+      __LOGIC_ERROR__(
+          "udp::socket::sendto: Error you need to create a valid datagram "
+          "socket before receiving data.");
+  }
+
+  //
+  //  Common operations.
+  //
+
+  // Close the file descriptor associated to the socket.
+  void close(void) {
+    if (fd_ != -1) {
+      if (::close(fd_) == -1)
+        __RUNTIME_ERROR__("tcp::socket::close: close() failed.");
+    }
+    fd_ = -1;
+  }
 
  private:
-  // File descriptor associated to the socket.
+  // Fill a struct addrinfo with a network address that matches host and
+  // service.
+  void get_addr_info(void) {
+    int status;
+    struct addrinfo hints;
+    struct addrinfo *infos;
+
+    ::memset(&hints, 0, sizeof(hints));
+    ::memset(&addrinfo_, 0, sizeof(addrinfo_));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags = AI_PASSIVE;
+
+    if ((status =
+             ::getaddrinfo(!host_.compare("") ? NULL : host_.c_str(),
+                           std::to_string(port_).c_str(), &hints, &infos)) != 0)
+      __RUNTIME_ERROR__("udp::socket::get_addr_info: getaddrinfo() failed.");
+
+    if (infos) ::memmove(&addrinfo_, infos, sizeof(*infos));
+  }
+
+  // Create an endpoint for communication.
+  void create_socket(void) {
+    if (fd_ != -1) return;
+
+    for (auto p = &addrinfo_; p != NULL; p = p->ai_next) {
+      if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
+        continue;
+
+      ::memset(&v_addrinfo_, 0, sizeof(*p));
+      ::memcpy(&v_addrinfo_, p, sizeof(*p));
+      break;
+    }
+
+    if (fd_ == -1)
+      __RUNTIME_ERROR__("tcp::socket::create_socket: socket failed().");
+  }
+
+ private:
+  // file descriptor associated to the socket.
   int fd_;
 
-  //
-  int port_;
+  // Socket address.
+  std::string host_;
 
-  //
+  // Socket port.
+  unsigned int port_;
+
+  // List of structures containing each, a network address.
   struct addrinfo addrinfo_;
 
-  //
+  // Network address used by the socket.
   struct addrinfo v_addrinfo_;
+
+  // Boolean to know if the socket is bound.
+  bool is_socket_bound_;
 };
 
 #endif  // _WIN32

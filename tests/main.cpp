@@ -181,6 +181,51 @@ SCENARIO("testing UDP socket default constructor") {
   REQUIRE(socket == socket2);
 }
 
+SCENARIO("testing UDP socket: client operations") {
+  GIVEN("default UDP sockets") {
+    udp::socket socket1;
+    udp::socket socket2;
+
+    WHEN("Initializing a basic datagram socket with a given host/port") {
+      socket1.init_datagram_socket("127.0.0.1", 27017);
+
+      THEN("fd should not be equal to -1, port shoudl be equal to 27017") {
+        REQUIRE(socket1.get_fd() != -1);
+        REQUIRE(socket1.get_port() == 27017);
+        REQUIRE(socket1.is_socket_bound() == false);
+        REQUIRE((socket1 == socket2) == false);
+      }
+
+      socket1.close();
+      THEN("fd should be equal to -1") { REQUIRE(socket1.get_fd() == -1); }
+    }
+  }
+}
+
+SCENARIO("testing UDP socket: server operations") {
+  GIVEN("default UDP sockets") {
+    udp::socket socket1;
+    udp::socket socket2;
+
+    WHEN("creating and binding a datagram socket on a given host/port") {
+      socket1.bind("127.0.0.1", 27017);
+
+      THEN(
+          "fd should not be equal to -1, port should be equal to 27017, socket "
+          "should now be bound to the given host/port") {
+        REQUIRE(socket1.get_fd() != -1);
+        REQUIRE(socket1.get_port() == 27017);
+        REQUIRE(socket1.is_socket_bound());
+        REQUIRE((socket1 == socket2) == false);
+        REQUIRE_THROWS(socket1.bind("127.0.0.1", 27017));
+      }
+
+      socket1.close();
+      THEN("fd should be equal to -1") { REQUIRE(socket1.get_fd() == -1); }
+    }
+  }
+}
+
 //
 // Event model tests sections
 //
