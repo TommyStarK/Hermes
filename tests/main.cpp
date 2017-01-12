@@ -12,25 +12,29 @@ using namespace hermes::network;
 // Workers tests section
 //
 SCENARIO("testing workers (Thread pool)") {
-  WHEN("giving 3 jobs to process") {
-    hermes::tools::workers workers(3);
+  WHEN("using default constructor") {
+    hermes::tools::workers workers;
 
     REQUIRE(workers.are_working());
+    workers.stop();
+    REQUIRE(!workers.are_working());
+  }
+
+  WHEN("giving 4 jobs to process to a thread pool using 3 concurrent threads") {
+    hermes::tools::workers workers(3);
+
     workers.enqueue_job([]() {});
     workers.enqueue_job([]() {});
     workers.enqueue_job([]() {});
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    workers.enqueue_job([&workers]() {
-      workers.stop();
-      REQUIRE(!workers.are_working());
-    });
+    workers.enqueue_job([&]() { workers.stop(); });
   }
 }
 
 //
 // TCP socket tests sections
 //
-SCENARIO("testing tcp socket default constructor") {
+SCENARIO("testing TCP socket default constructor") {
   tcp::socket socket;
   tcp::socket socket2;
 
@@ -40,8 +44,8 @@ SCENARIO("testing tcp socket default constructor") {
   REQUIRE(socket == socket2);
 }
 
-SCENARIO("testing tcp socket: server operations") {
-  GIVEN("default tcp sockets") {
+SCENARIO("testing TCP socket: server operations") {
+  GIVEN("default TCP sockets") {
     tcp::socket default_socket;
     tcp::socket socket_for_test;
 
@@ -89,8 +93,8 @@ SCENARIO("testing tcp socket: server operations") {
   }
 }
 
-SCENARIO("testing tcp socket: client operations") {
-  GIVEN("default tcp sockets") {
+SCENARIO("testing TCP socket: client operations") {
+  GIVEN("default TCP sockets") {
     tcp::socket default_socket;
     tcp::socket socket_for_test;
 
@@ -142,8 +146,8 @@ SCENARIO("testing tcp socket: client operations") {
 //
 // TCP client tests section
 //
-SCENARIO("testing tcp client") {
-  WHEN("using default constructor and move constructor") {
+SCENARIO("testing TCP client") {
+  WHEN("constructing a default TCP client") {
     tools::TIMEOUT = 0;
 
     tcp::client client;
@@ -156,8 +160,8 @@ SCENARIO("testing tcp client") {
 //
 // TCP server tests section
 //
-SCENARIO("testing tcp server") {
-  WHEN("constructing a tcp server") {
+SCENARIO("testing TCP server") {
+  WHEN("constructing a default TCP server") {
     tools::TIMEOUT = 0;
 
     tcp::server server;
@@ -168,16 +172,91 @@ SCENARIO("testing tcp server") {
 }
 
 //
-// Poll poller tests section
+// UDP socket tests section
 //
-SCENARIO("testing poller") {
-  WHEN("testing basic features") {
+
+SCENARIO("testing UDP socket default constructor") {
+  udp::socket socket;
+  udp::socket socket2;
+
+  REQUIRE(socket.get_fd() == -1);
+  REQUIRE(socket.get_port() == 0);
+  REQUIRE(socket == socket2);
+}
+
+//
+// Event model tests sections
+//
+
+SCENARIO("testing event model features") {
+  GIVEN("empty model event") {
+    event event;
+
+    WHEN("testing empty event") {
+      REQUIRE(!event.unwatch_);
+      REQUIRE(!event.on_send_.running);
+      REQUIRE(!event.on_send_.callback);
+      REQUIRE(!event.on_receive_.running);
+      REQUIRE(!event.on_receive_.callback);
+      REQUIRE(event.has() == false);
+      REQUIRE(event.pollfd_.fd == -1);
+      REQUIRE(event.pollfd_.events == 0);
+      REQUIRE(event.pollfd_.revents == 0);
+    }
+
+    WHEN("setting a specific event to monitor for this event") {
+      auto send_callback = []() {};
+      auto receive_callback = []() {};
+
+      event.on_send_.callback = send_callback;
+      event.update(4);
+
+      THEN("fd should be equal to 4 and event flag set to POLLOUT") {
+        REQUIRE(event.pollfd_.fd == 4);
+        REQUIRE(event.pollfd_.events == POLLOUT);
+        REQUIRE(event.has());
+      }
+
+      event.reset_poll_struct();
+      event.on_send_.callback = nullptr;
+
+      THEN("pollfd struct: fd should be equal to -1 and event flag set to 0") {
+        REQUIRE(event.pollfd_.fd == -1);
+        REQUIRE(event.pollfd_.events == 0);
+        REQUIRE(event.has() == false);
+      }
+
+      event.on_receive_.callback = receive_callback;
+      event.update(42);
+
+      THEN("pollfd struct: fd should be equal to 42 and event set to POLLIN") {
+        REQUIRE(event.pollfd_.fd == 42);
+        REQUIRE(event.pollfd_.events == POLLIN);
+        REQUIRE(event.has());
+      }
+
+      event.reset_poll_struct();
+      event.on_receive_.callback = nullptr;
+    }
+  }
+}
+
+//
+// Polling model tests section
+//
+SCENARIO("testing polling model features") {
+  WHEN("creating an empty polling model") {
     tools::TIMEOUT = 0;
 
     REQUIRE(poller_g == nullptr);
+
     std::shared_ptr<poller> poller;
     poller = get_poller();
-    REQUIRE(poller != nullptr);
+
+    THEN("creating an instance for the poller singleton") {
+      REQUIRE(poller != nullptr);
+      REQUIRE(poller_g != nullptr);
+    }
 
     tcp::socket socket;
     REQUIRE(poller->has<tcp::socket>(socket) == false);

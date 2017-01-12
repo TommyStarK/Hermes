@@ -469,16 +469,35 @@ class socket {
 // Provides synchronous datagram-oriented socket functionality.
 class socket {
  public:
-  socket(void) {}
+  socket(void) : fd_(-1), port_(0) {}
+
+  socket(const socket &) = delete;
+
+  socket &operator=(const socket &) = delete;
+
+  bool operator==(const socket &s) const { return fd_ == s.get_fd(); }
+
   ~socket(void) = default;
 
  public:
   // Returns the file descriptor associated to the socket.
   int get_fd(void) const { return fd_; }
 
+  //
+  int get_port(void) const { return port_; }
+
  private:
   // File descriptor associated to the socket.
   int fd_;
+
+  //
+  int port_;
+
+  //
+  struct addrinfo addrinfo_;
+
+  //
+  struct addrinfo v_addrinfo_;
 };
 
 #endif  // _WIN32
