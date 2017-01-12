@@ -1,7 +1,4 @@
 #define CATCH_CONFIG_MAIN
-#include <chrono>
-#include <memory>
-#include <thread>
 #include "Hermes.hpp"
 #include "catch.hpp"
 
