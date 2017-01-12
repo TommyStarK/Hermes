@@ -863,7 +863,7 @@ class client {
 
  public:
   // Returns true or false whether the client is connected.
-  bool is_connected(void) const { return connected_; }
+  bool is_connected(void) const { return connected_ == true; }
 
   // Returns the client's socket.
   const socket &get_socket(void) const { return socket_; }

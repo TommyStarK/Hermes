@@ -3,13 +3,25 @@
 
 Hermes is a lightweight, cross-platform, asynchronous, C++11 network library. Hermes provides features for either
 TCP/UDP server or TCP/UDP client. Clients and servers work asynchronously based on a asynchronous I/O model.
+In order to use Hermes, you just need to include the `Hermes.hpp` header in your code.
+
+
+- compiling using g++:
+
+
+Assuming you want to compile a file containing code using Hermes features, you just need to run the following command:
+
+
+```bash
+  g++ -std=c++11 your_file.cpp -pthread -o binary_name
+```
 
 
 ## Hermes TCP API
 
 
-Using the Hermes TCP API, you can easily create either asynchronous tcp client or asynchronous tcp server.
-
+Thanks to the Hermes TCP API, you can easily create either asynchronous TCP server or client.
+s
 
 ### Socket:
 
@@ -31,7 +43,7 @@ TCP socket features.
   // Move constructor.
   socket(socket&& socket);
 
-  // operator
+  // operator ==
   bool operator==(const socket &socket) const;
 
   //
@@ -112,28 +124,28 @@ TCP socket features.
     condvar.notify_all();
   }
 
+
+  void send_callback(const std::shared_ptr<client> &client, bool success, std::size_t bytes_sent) {
+    if (success)
+      std::cout << bytes_sent << std::endl;
+    else
+      client->disconnect();
+  }
+
+  void receive_callback(const std::shared_ptr<client> &client, bool success, std::vector<char> buffer) {
+    if (success) {
+      std::cout << std::string(buffer.data());
+      client->async_send(std::string(buffer.data()), std::bind(&send_callback, client, std::placeholders::_1, std::placeholders::_2));
+    } else {
+      client->disconnect();
+    }
+  }
+
   int main(void) {
     server server;
 
     server.on_connection([](const std::shared_ptr<client> &client) {
-
-      client->async_receive(1024, [&](bool success, std::vector<char> buffer) {
-
-        if (success) {
-
-          std::cout << std::string(buffer.data());
-
-          client->async_send(std::string(buffer.data()), [&](bool success, std::size_t bytes_sent) {
-
-            if (success)
-              std::cout << bytes_sent << std::endl;
-            else
-              client->disconnect();
-          });
-        } else {
-          client->disconnect();
-        }        
-      });
+      client->async_receive(1024, std::bind(&receive_callback, client, std::placeholders::_1, std::placeholders::_2));
     });
 
     server.run("127.0.0.1", 27017);
@@ -201,31 +213,30 @@ TCP socket features.
     condvar.notify_all();
   }
 
+  void receive_callback(client &client, bool success, std::vector<char> buffer) {
+    if (success)
+      std::cout << std::string(buffer.data());
+    else
+      client.disconnect();
+  }
+
+  void send_callback(client &client, bool success, std::size_t bytes_sent) {
+    if (success) {
+      std::cout << bytes_sent << std::endl;
+      client.async_receive(1024, std::bind(&receive_callback, std::ref(client), std::placeholders::_1, std::placeholders::_2));
+    } else
+        client.disconnect();  
+  }
+
+
   int main(void) {
     client client;
 
     client.connect("127.0.0.1", 27017 );
-
-    client.async_send("Hello world!\n", [&](bool success, std::size_t bytes_sent) {
-
-      if (success) {
-
-        std::cout << bytes_sent << std::endl;
-
-        client.async_receive(1024, [&](bool success, std::vector<char> buffer) {
-
-          if (success)
-            std::cout << std::string(buffer.data());
-          else
-            client.disconnect();
-
-        });
-
-      } else
-          client.disconnect();
-    });
+    client.async_send("Hello world!\n", std::bind(&send_callback, std::ref(client), std::placeholders::_1, std::placeholders:: _2));
 
     signal(SIGINT, &sig_handler);
+
     std::mutex mutex;
     std::unique_lock<std::mutex> lock(mutex);
     condvar.wait(lock);
