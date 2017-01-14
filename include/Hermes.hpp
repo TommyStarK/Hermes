@@ -7,7 +7,6 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
-#include <signal.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -15,6 +14,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <csignal>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -32,7 +32,11 @@ namespace hermes {
 
 namespace tools {
 // Feel free to modify any value of the following variables to fit to your
-// needs.
+// needs:
+// - TIMEOUT
+// - BACKLOG
+// - BUFFER_SIZE
+// - THREADS_NBR
 
 // Default timeout value (milliseconds).
 // Set to infinite by default in order to allow the poller to wait indefinitely
@@ -43,6 +47,8 @@ static INT TIMEOUT = INFINITE;
 static int TIMEOUT = -1;
 #endif  // _WIN32
 
+// A condition variable to block the calling thread until notified.
+std::condition_variable condvar;
 // Default size for the maximum length to which the queue for pending
 // connections may grow.
 static unsigned int const BACKLOG = 100;
@@ -50,6 +56,19 @@ static unsigned int const BACKLOG = 100;
 static unsigned int const BUFFER_SIZE = 8096;
 // Default number of concurrent threads supported by the system.
 static unsigned int const THREADS_NBR = std::thread::hardware_concurrency();
+
+// A signal handler.
+// If the registered signal is caught it will invoke this function.
+void signal_handler(int) { condvar.notify_all(); }
+
+// Wait until the specified signal is caught.
+void wait_for_signal(int signal_number) {
+  std::mutex mutex;
+
+  ::signal(signal_number, &signal_handler);
+  std::unique_lock<std::mutex> lock(mutex);
+  condvar.wait(lock);
+}
 
 // Format the error to provide an understandable output.
 std::string format_error(const std::string &msg) {
@@ -227,9 +246,9 @@ class socket {
       __LOGIC_ERROR__("tcp::socket::bind: Socket is  already bound to" + host_ +
                       ":" + std::to_string(port_));
 
-    int yes = 1;
     create_socket(host, port);
 
+    int yes = 1;
     if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
       __RUNTIME_ERROR__("tcp::socket::bind: setsockopt() failed.");
 
@@ -418,7 +437,7 @@ class socket {
   std::string host_;
 
   // Socket port.
-  int port_;
+  unsigned int port_;
 
   // Boolean to know if the socket is bound.
   bool is_socket_bound_;
