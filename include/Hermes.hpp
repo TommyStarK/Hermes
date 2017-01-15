@@ -543,7 +543,7 @@ class socket {
   // Returns the port associated to the socket.
   unsigned int get_port(void) const { return port_; }
 
-  // Returns true if the socket is connected, false otherwise.
+  // Returns true if the socket is bound, false otherwise.
   bool is_socket_bound(void) const { return is_socket_bound_; }
 
  public:
@@ -567,8 +567,8 @@ class socket {
   //  @param:
   //    - a reference on a const string: Data to send.
   //
-  std::size_t sendto(const std::string &data) {
-    return sendto(std::vector<char>(data.begin(), data.end()));
+  std::size_t sendto(const std::string &str) {
+    return sendto(std::vector<char>(str.begin(), str.end()), str.size());
   }
 
   // Send data to another socket.
@@ -576,14 +576,14 @@ class socket {
   //  @param:
   //    - a reference on a const vector of char: Data to send.
   //
-  std::size_t sendto(const std::vector<char> &data) {
+  std::size_t sendto(const std::vector<char> &data, std::size_t size) {
     if (fd_ == -1)
       __LOGIC_ERROR__(
           "udp::socket::sendto: You need to create a valid datagram socket "
           "before sending data.");
 
-    int res = ::sendto(fd_, data.data(), data.size(), 0, info_.ai_addr,
-                       info_.ai_addrlen);
+    int res =
+        ::sendto(fd_, data.data(), size, 0, info_.ai_addr, info_.ai_addrlen);
 
     if (res == -1) __RUNTIME_ERROR__("udp::socket::sendto: sendto() failed.");
 
@@ -595,8 +595,8 @@ class socket {
   //  @param:
   //    - a reference on a const string: Data to broadcast.
   //
-  std::size_t broadcast(const std::string &data) {
-    return broadcast(std::vector<char>(data.begin(), data.end()));
+  std::size_t broadcast(const std::string &str) {
+    return broadcast(std::vector<char>(str.begin(), str.end()), str.size());
   }
 
   // Broadcast data.
@@ -604,15 +604,15 @@ class socket {
   //  @param:
   //    - a reference on a const vector of char: Data to broadcast.
   //
-  std::size_t broadcast(const std::vector<char> &data) {
+  std::size_t broadcast(const std::vector<char> &data, std::size_t size) {
     if (fd_ == -1)
       __LOGIC_ERROR__(
           "udp::socket::broadcast: You need to create a valid data socket "
           "before broadcasting data.");
 
     int res =
-        ::sendto(fd_, data.data(), data.size(), 0,
-                 (struct sockaddr *)&broadcast_info_, sizeof(broadcast_info_));
+        ::sendto(fd_, data.data(), size, 0, (struct sockaddr *)&broadcast_info_,
+                 sizeof(broadcast_info_));
 
     if (res == -1)
       __RUNTIME_ERROR__("udp::socket::broadcast: sendto() failed.");
@@ -1485,26 +1485,6 @@ class client {
   // Returns the client's socket.
   const socket &get_socket(void) const { return socket_; }
 
-  // Initialize the client.
-  //
-  //@params:
-  //    - string host.
-  //    - unsigned int port.
-  //    - broadcast_mode: set to true to enable broadcast.
-  //
-  void init(const std::string host, unsigned int port, bool broadcast_mode) {
-    socket_.init_datagram_socket(host, port, broadcast_mode);
-    broadcast_mode_ = broadcast_mode;
-    poller_->add<udp::socket>(socket_);
-  }
-
-  // Stop the client.
-  void stop(void) {
-    broadcast_mode_ = false;
-    poller_->remove<udp::socket>(socket_);
-    socket_.close();
-  }
-
  private:
   // Send callback.
   void on_send(void) {
@@ -1519,9 +1499,9 @@ class client {
 
     try {
       if (broadcast_mode_)
-        result = socket_.broadcast(buffer);
+        result = socket_.broadcast(buffer, buffer.size());
       else
-        result = socket_.sendto(buffer);
+        result = socket_.sendto(buffer, buffer.size());
     } catch (const std::exception &e) {
       __DISPLAY_ERROR__(e.what());
     }
@@ -1535,6 +1515,19 @@ class client {
   }
 
  public:
+  // Initialize the client.
+  //
+  //@params:
+  //    - string host.
+  //    - unsigned int port.
+  //    - broadcast_mode: set to true to enable broadcast.
+  //
+  void init(const std::string host, unsigned int port, bool broadcast_mode) {
+    socket_.init_datagram_socket(host, port, broadcast_mode);
+    broadcast_mode_ = broadcast_mode;
+    poller_->add<udp::socket>(socket_);
+  }
+
   // Asynchronous send of data.
   //
   // @params:
@@ -1610,6 +1603,13 @@ class client {
           "udp::client::async_send: You must provide a callback in order to "
           "perform an asynchronous send of data.");
     }
+  }
+
+  // Stop the client.
+  void stop(void) {
+    broadcast_mode_ = false;
+    poller_->remove<udp::socket>(socket_);
+    socket_.close();
   }
 
  private:
