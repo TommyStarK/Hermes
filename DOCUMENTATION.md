@@ -174,6 +174,9 @@ when the socket is ready for read or write data. Callbacks must be provided for 
 
   using namespace hermes::network::tcp;
 
+  typedef std::function<void(bool, std::size_t)> async_send_callback;
+  typedef std::function<void(bool, std::vector<char>)> async_receive_callback;
+  
   // Default constructor.
   client(void);
 
@@ -189,16 +192,17 @@ when the socket is ready for read or write data. Callbacks must be provided for 
   // Connect the client to the given host and service.
   void connect(const std::string &host, unsigned int port);
 
-  // Disconnect the client.
-  // Disconnect method is call in the destructor.
-  void disconnect();
-
   // Asynchronous send operation.
   void async_send(const std::string &data, const async_send_callback &callback);
   void async_send(std::vector<char> data, const async_send_callback &callback);
 
   // Asynchronous receive operation.
   void async_receive(std::size_t size_to_read, const async_receive_callback &callback);
+
+// Disconnect the client.
+  // Disconnect method is call in the destructor.
+  void disconnect();
+
 
 ```
 
