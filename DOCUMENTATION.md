@@ -5,8 +5,8 @@ Hermes is a lightweight, cross-platform, asynchronous, C++11 network library. He
 you can easily create server or client following either TCP or UDP protocol. Hermes is based on a polling model using a thread
 pool in order to offer an asynchronous I/O model to handle events between the server and the connected clients. Server and
 client work asynchronously and the public Hermes API allows only to perform asynchronous operations.
-To use Hermes, you just need to include the `Hermes.hpp` header in your code.
 
+To use Hermes, you just need to include the `Hermes.hpp` header in your code.
 
 - compiling using g++:
 
@@ -86,8 +86,8 @@ host/service for the client. Every operation of the TCP socket is synchronous.
 ### Server
 
 
-The TCP server class allows to create and use an asynchronous server. The server is using the polling model to detect when a client
-is trying to connect to the server. Before running the server, you must provide a callback to execute incase of connection.
+The TCP server class allows to create and use an asynchronous server. The server is using the polling model to detect when
+a client is trying to connect to the server. Before running the server, you must provide a callback to execute in case of connection.
 
 
 #### Methods:
@@ -174,9 +174,6 @@ when the socket is ready for read or write data. Callbacks must be provided for 
 
   using namespace hermes::network::tcp;
 
-  typedef std::function<void(bool, std::size_t)> async_send_callback;
-  typedef std::function<void(bool, std::vector<char>)> async_receive_callback;
-  
   // Default constructor.
   client(void);
 
@@ -192,17 +189,16 @@ when the socket is ready for read or write data. Callbacks must be provided for 
   // Connect the client to the given host and service.
   void connect(const std::string &host, unsigned int port);
 
+  // Disconnect the client.
+  // Disconnect method is call in the destructor.
+  void disconnect();
+
   // Asynchronous send operation.
   void async_send(const std::string &data, const async_send_callback &callback);
   void async_send(std::vector<char> data, const async_send_callback &callback);
 
   // Asynchronous receive operation.
   void async_receive(std::size_t size_to_read, const async_receive_callback &callback);
-
-// Disconnect the client.
-  // Disconnect method is call in the destructor.
-  void disconnect();
-
 
 ```
 
@@ -245,3 +241,26 @@ when the socket is ready for read or write data. Callbacks must be provided for 
   }
 
 ```
+
+
+## Hermes UDP API
+
+
+An easy way to create and use UDP server or client.
+
+
+### Socket
+
+
+incoming.
+
+
+### Server
+
+
+incoming.
+
+
+### client
+
+incoming.
