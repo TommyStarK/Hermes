@@ -8,7 +8,7 @@ client work asynchronously and the public Hermes API allows only to perform asyn
 
 To use Hermes, you just need to include the `Hermes.hpp` header in your code.
 
-- compiling using g++:
+- Compiling using g++:
 
 
 Assuming you want to compile a file containing some code using Hermes features. You just need to run the following command:
@@ -17,6 +17,29 @@ Assuming you want to compile a file containing some code using Hermes features. 
   g++ -std=c++11 your_file.cpp -pthread -o binary_name
 ```
 
+# Summary:
+
+- TCP API
+
+  - socket
+    - methods
+
+  - server
+    - methods
+    - example: asynchronous TCP echo server
+
+  - client
+    - methods
+    - example: asynchronous TCP echo client
+
+
+- UDP API
+
+  - socket
+
+  - server
+
+  - client
 
 ## Hermes TCP API
 
