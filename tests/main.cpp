@@ -20,11 +20,11 @@ SCENARIO("testing workers (Thread pool)") {
   WHEN("giving 4 jobs to process to a thread pool using 3 concurrent threads") {
     hermes::tools::workers workers(3);
 
-    workers.enqueue_job([]() {});
-    workers.enqueue_job([]() {});
-    workers.enqueue_job([]() {});
+    REQUIRE_NOTHROW(workers.enqueue_job([]() {}));
+    REQUIRE_NOTHROW(workers.enqueue_job([]() {}));
+    REQUIRE_NOTHROW(workers.enqueue_job([]() {}));
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    workers.enqueue_job([&]() { workers.stop(); });
+    REQUIRE_NOTHROW(workers.enqueue_job([&]() { workers.stop(); }));
   }
 }
 
@@ -187,16 +187,39 @@ SCENARIO("testing UDP socket: client operations") {
     udp::socket socket2;
 
     WHEN("Initializing a basic datagram socket with a given host/port") {
-      socket1.init_datagram_socket("127.0.0.1", 27017);
+      REQUIRE_NOTHROW(socket1.init_datagram_socket("127.0.0.1", 27017, false));
 
       THEN("fd should not be equal to -1, port shoudl be equal to 27017") {
         REQUIRE(socket1.get_fd() != -1);
+        REQUIRE(socket1.get_host() == "127.0.0.1");
         REQUIRE(socket1.get_port() == 27017);
         REQUIRE(socket1.is_socket_bound() == false);
         REQUIRE((socket1 == socket2) == false);
       }
 
-      socket1.close();
+      REQUIRE_NOTHROW(socket1.close());
+      THEN("fd should be equal to -1") { REQUIRE(socket1.get_fd() == -1); }
+    }
+  }
+}
+
+SCENARIO("testing UDP socket: client operations - broadcasting") {
+  GIVEN("default UDP sockets") {
+    udp::socket socket1;
+    udp::socket socket2;
+
+    WHEN("Initializing a broadcasting socket with a given host/port") {
+      REQUIRE_NOTHROW(socket1.init_datagram_socket("127.0.0.1", 27017, true));
+
+      THEN("fd should not be equal to -1, port shoudl be equal to 27017") {
+        REQUIRE(socket1.get_fd() != -1);
+        REQUIRE(socket1.get_host() == "127.0.0.1");
+        REQUIRE(socket1.get_port() == 27017);
+        REQUIRE(socket1.is_socket_bound() == false);
+        REQUIRE((socket1 == socket2) == false);
+      }
+
+      REQUIRE_NOTHROW(socket1.close());
       THEN("fd should be equal to -1") { REQUIRE(socket1.get_fd() == -1); }
     }
   }
@@ -208,7 +231,7 @@ SCENARIO("testing UDP socket: server operations") {
     udp::socket socket2;
 
     WHEN("creating and binding a datagram socket on a given host/port") {
-      socket1.bind("127.0.0.1", 27017);
+      REQUIRE_NOTHROW(socket1.bind("", 27017));
 
       THEN(
           "fd should not be equal to -1, port should be equal to 27017, socket "
@@ -217,12 +240,77 @@ SCENARIO("testing UDP socket: server operations") {
         REQUIRE(socket1.get_port() == 27017);
         REQUIRE(socket1.is_socket_bound());
         REQUIRE((socket1 == socket2) == false);
-        REQUIRE_THROWS(socket1.bind("127.0.0.1", 27017));
+        REQUIRE_THROWS(socket1.bind("", 27017));
       }
 
-      socket1.close();
+      REQUIRE_NOTHROW(socket1.close());
       THEN("fd should be equal to -1") { REQUIRE(socket1.get_fd() == -1); }
     }
+  }
+}
+
+SCENARIO("testing UDP socket: sending/receiving data") {
+  GIVEN("default UDP sockets") {
+    udp::socket socket1;
+    udp::socket socket2;
+
+    WHEN(
+        "one thread working as server waiting for receive data from another "
+        "thread working as client") {
+      std::thread server([&socket1]() {
+        std::vector<char> data;
+
+        data.reserve(tools::BUFFER_SIZE);
+        REQUIRE_NOTHROW(socket1.bind("127.0.0.1", 27017));
+        REQUIRE(socket1.is_socket_bound());
+        auto res = socket1.recvfrom(data);
+        REQUIRE(res == 13);
+        REQUIRE_NOTHROW(socket1.close());
+        REQUIRE(socket1.get_fd() == -1);
+      });
+
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+
+      std::thread client([&socket2]() {
+        REQUIRE_NOTHROW(
+            socket2.init_datagram_socket("127.0.0.1", 27017, false));
+        auto res = socket2.sendto("Hello world!\n");
+        REQUIRE(res == 13);
+        REQUIRE_NOTHROW(socket2.close());
+        REQUIRE(socket2.get_fd() == -1);
+      });
+
+      REQUIRE_NOTHROW(server.join());
+      REQUIRE_NOTHROW(client.join());
+    }
+  }
+}
+
+//
+// UDP client tests section
+//
+SCENARIO("testing UDP client") {
+  WHEN("constructing a default UDP client") {
+    tools::TIMEOUT = 0;
+
+    udp::client client;
+
+    REQUIRE(!client.broadcast_mode_enabled());
+    set_poller(nullptr);
+  }
+}
+
+//
+// UDP server tests section
+//
+SCENARIO("testing UDP server") {
+  WHEN("constructing a default UDP server") {
+    tools::TIMEOUT = 0;
+
+    udp::server server;
+
+    REQUIRE(!server.is_running());
+    set_poller(nullptr);
   }
 }
 

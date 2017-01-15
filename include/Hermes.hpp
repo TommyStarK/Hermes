@@ -62,6 +62,10 @@ static unsigned int const THREADS_NBR = std::thread::hardware_concurrency();
 void signal_handler(int) { condvar.notify_all(); }
 
 // Wait until the specified signal is caught.
+//
+// @param:
+//    - the signal number.
+//
 void wait_for_signal(int signal_number) {
   std::mutex mutex;
 
@@ -71,6 +75,10 @@ void wait_for_signal(int signal_number) {
 }
 
 // Format the error to provide an understandable output.
+//
+// @param:
+//    - the string to format.
+//
 std::string format_error(const std::string &msg) {
   return std::string("[hermes ") + std::string(__FILE__) + std::string(":") +
          std::to_string(__LINE__) + std::string("]\n") + msg;
@@ -85,6 +93,10 @@ std::string format_error(const std::string &msg) {
 // A thread pool waiting for jobs for concurrent execution.
 // Jobs are enqueued in a synchronized queue. Each worker (thread) is waiting
 // for process a job.
+//
+// @param:
+//     - number of concurrent threads required.
+//
 class workers {
  public:
   explicit workers(unsigned int workers_nbr = THREADS_NBR) : stop_(false) {
@@ -117,6 +129,26 @@ class workers {
   ~workers(void) { stop(); }
 
  public:
+  // Returns true or false whether the workers are working.
+  bool are_working(void) const { return !stop_; }
+
+  // Allows the user to enqueue a new job which must be processed.
+  // It will notify every threads that a job has been enqueued.
+  //
+  // @param:
+  //    - a reference on a const function object: The job to enqueue.
+  //
+  void enqueue_job(const std::function<void(void)> &new_job) {
+    if (!new_job)
+      __LOGIC_ERROR__(
+          "tools::workers::enqueue_job: Passing nullptr instead of const "
+          "std::function<void(void)> &.");
+
+    std::unique_lock<std::mutex> lock(mutex_job_queue_);
+    job_queue_.push(new_job);
+    condition_.notify_all();
+  }
+
   // Stop the thread pool.
   void stop(void) {
     if (stop_) return;
@@ -129,22 +161,6 @@ class workers {
     for (auto &worker : workers_) worker.join();
     workers_.clear();
   }
-
-  // Allows the user to enqueue a new job which must be processed.
-  // It will notify every threads that a job has been enqueued.
-  void enqueue_job(const std::function<void(void)> &new_job) {
-    if (!new_job)
-      __LOGIC_ERROR__(
-          "tools::workers::enqueue_job: Passing nullptr instead of const "
-          "std::function<void(void)> &.");
-
-    std::unique_lock<std::mutex> lock(mutex_job_queue_);
-    job_queue_.push(new_job);
-    condition_.notify_all();
-  }
-
-  // Returns true or false whether the workers are working.
-  bool are_working(void) const { return !stop_; }
 
  private:
   // Check the job queue to know if there is a job waiting. If that is the case
@@ -236,11 +252,35 @@ class socket {
   ~socket(void) = default;
 
  public:
+  // Returns the file descriptor associated to the socket.
+  int get_fd(void) const { return fd_; }
+
+  // Returns the socket address.
+  const std::string &get_host(void) const { return host_; }
+
+  // Returns the socket port.
+  unsigned int get_port(void) const { return port_; }
+
+  // Returns true or false whether the socket is bound.
+  bool is_socket_bound(void) const { return is_socket_bound_; }
+
+  // Returns a reference on a structure containing a network address used by the
+  // socket.
+  struct addrinfo &get_struct_addrinfo(void) {
+    return info_;
+  }
+
+ public:
   //
   // Server operations.
   //
 
   // Assign a name to the socket.
+  //
+  // @params:
+  //    - string host.
+  //    - unsigned int port.
+  //
   void bind(const std::string &host, unsigned int port) {
     if (is_socket_bound_)
       __LOGIC_ERROR__("tcp::socket::bind: Socket is  already bound to" + host_ +
@@ -258,6 +298,9 @@ class socket {
   }
 
   // Mark the socket as a passive socket.
+  //
+  // @param: cf top of "Hermes.hpp"
+  //
   void listen(unsigned int backlog = tools::BACKLOG) {
     if (!is_socket_bound_)
       __LOGIC_ERROR__(
@@ -302,6 +345,11 @@ class socket {
   //
 
   // Connect to a remote host.
+  //
+  // @params:
+  //    - string host.
+  //    - unsigned int port.
+  //
   void connect(const std::string &host, unsigned int port) {
     if (is_socket_bound_)
       __LOGIC_ERROR__(
@@ -316,12 +364,21 @@ class socket {
   }
 
   // Send data.
+  //
+  // @params:
+  //    - a reference on a const string: Data to send.
+  //
   std::size_t send(const std::string &message) {
     return send(std::vector<char>(message.begin(), message.end()),
                 message.size());
   }
 
   // Send data.
+  //
+  // @params:
+  //    - a reference on a const vector of char: Data to send.
+  //    - size: The size of the message.
+  //
   std::size_t send(const std::vector<char> &message, std::size_t message_len) {
     if (fd_ == -1)
       __LOGIC_ERROR__(
@@ -336,6 +393,10 @@ class socket {
   }
 
   // Receive data.
+  //
+  // @param:
+  //    - size_t size to read.
+  //
   std::vector<char> receive(std::size_t size_to_read = tools::BUFFER_SIZE) {
     if (fd_ == -1)
       __LOGIC_ERROR__(
@@ -374,29 +435,15 @@ class socket {
     }
 
     fd_ = -1;
-  }
-
- public:
-  // Returns the file descriptor associated to the socket.
-  int get_fd(void) const { return fd_; }
-
-  // Returns the socket address.
-  const std::string &get_host(void) const { return host_; }
-
-  // Returns the socket port.
-  unsigned int get_port(void) const { return port_; }
-
-  // Returns true or false whether the socket is bound.
-  bool is_socket_bound(void) const { return is_socket_bound_; }
-
-  // Returns a reference on a structure containing a network address used by the
-  // socket.
-  struct addrinfo &get_struct_addrinfo(void) {
-    return info_;
+    is_socket_bound_ = false;
   }
 
  private:
   // Creates an endpoint for communication.
+  //
+  //  @params:
+  //      - string host.
+  //      - unsigned int port.
   void create_socket(const std::string &host, unsigned int port) {
     if (fd_ != -1) return;
 
@@ -490,27 +537,87 @@ class socket {
   // Returns the file descriptor associated to the socket.
   int get_fd(void) const { return fd_; }
 
+  // Returns the host associated to the socket.
+  const std::string &get_host(void) const { return host_; }
+
   // Returns the port associated to the socket.
   unsigned int get_port(void) const { return port_; }
 
   // Returns true if the socket is connected, false otherwise.
   bool is_socket_bound(void) const { return is_socket_bound_; }
 
+ public:
   //
   //  Client operations
   //
 
-  // Initialize a basic datagram socket.
-  void init_datagram_socket(const std::string &host, unsigned int port) {
-    create_socket(host, port);
+  // Initialize a datagram socket.
+  //
+  // @param: Boolean to know if we want to enable the broadcasting mode.
+  void init_datagram_socket(const std::string &host, unsigned int port,
+                            bool broadcasting) {
+    if (!broadcasting)
+      create_socket(host, port);
+    else
+      create_broadcaster(host, port);
   }
 
   // Send data to another socket.
-  void sendto() {
+  //
+  //  @param:
+  //    - a reference on a const string: Data to send.
+  //
+  std::size_t sendto(const std::string &data) {
+    return sendto(std::vector<char>(data.begin(), data.end()));
+  }
+
+  // Send data to another socket.
+  //
+  //  @param:
+  //    - a reference on a const vector of char: Data to send.
+  //
+  std::size_t sendto(const std::vector<char> &data) {
     if (fd_ == -1)
       __LOGIC_ERROR__(
-          "udp::socket::sendto: Error you need to create a valid datagram "
-          "socket before sending data.");
+          "udp::socket::sendto: You need to create a valid datagram socket "
+          "before sending data.");
+
+    int res = ::sendto(fd_, data.data(), data.size(), 0, info_.ai_addr,
+                       info_.ai_addrlen);
+
+    if (res == -1) __RUNTIME_ERROR__("udp::socket::sendto: sendto() failed.");
+
+    return res;
+  }
+
+  // Broadcast data.
+  //
+  //  @param:
+  //    - a reference on a const string: Data to broadcast.
+  //
+  std::size_t broadcast(const std::string &data) {
+    return broadcast(std::vector<char>(data.begin(), data.end()));
+  }
+
+  // Broadcast data.
+  //
+  //  @param:
+  //    - a reference on a const vector of char: Data to broadcast.
+  //
+  std::size_t broadcast(const std::vector<char> &data) {
+    if (fd_ == -1)
+      __LOGIC_ERROR__(
+          "udp::socket::broadcast: You need to create a valid data socket "
+          "before broadcasting data.");
+
+    int res =
+        ::sendto(fd_, data.data(), data.size(), 0,
+                 (struct sockaddr *)&broadcast_info_, sizeof(broadcast_info_));
+
+    if (res == -1)
+      __RUNTIME_ERROR__("udp::socket::broadcast: sendto() failed.");
+
+    return res;
   }
 
   //
@@ -518,12 +625,17 @@ class socket {
   //
 
   // Assign a name to the socket.
+  //
+  //  @params:
+  //      - string host.
+  //      - unsigned int port.
+  //
   void bind(const std::string &host, unsigned int port) {
     if (is_socket_bound_)
       __LOGIC_ERROR__("udp::socket::bind: Socket is  already bound to" + host_ +
                       ":" + std::to_string(port_));
 
-    init_datagram_socket(host, port);
+    create_socket(host, port);
 
     if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1)
       __RUNTIME_ERROR__("udp::socket::bind: bind() failed.");
@@ -531,11 +643,25 @@ class socket {
   }
 
   // Receive data from another socket.
-  void recvfrom() {
-    if (fd_ == -1)
+  //
+  //  @param: A reference on vector of chat where the received bytes will be
+  //  stored.
+  //
+  std::size_t recvfrom(std::vector<char> &incoming) {
+    if (!is_socket_bound_)
       __LOGIC_ERROR__(
-          "udp::socket::sendto: Error you need to create a valid datagram "
-          "socket before receiving data.");
+          "udp::socket::recvfrom: You need to bind a valid datagram socket "
+          "before receiving data.");
+
+    socklen_t len;
+    len = sizeof(source_info_);
+    int res = ::recvfrom(fd_, incoming.data(), tools::BUFFER_SIZE - 1, 0,
+                         (struct sockaddr *)&source_info_, &len);
+
+    if (res == -1)
+      __RUNTIME_ERROR__("udp::socket::recvfrom: recvfrom() failed.");
+
+    return res;
   }
 
   //
@@ -550,10 +676,16 @@ class socket {
     }
 
     fd_ = -1;
+    is_socket_bound_ = false;
   }
 
  private:
   // Create an endpoint for communication with the given host/port.
+  //
+  //  @params:
+  //      - string host.
+  //      - unsigned int port.
+  //
   void create_socket(const std::string &host, unsigned int port) {
     if (fd_ != -1) return;
 
@@ -571,13 +703,15 @@ class socket {
 
     if ((status = ::getaddrinfo(!host_.compare("") ? NULL : host_.c_str(),
                                 std::to_string(port_).c_str(), &hints,
-                                &addr_infos)) != 0)
+                                &addr_infos)) != 0) {
       __RUNTIME_ERROR__("udp::socket::get_addr_info: getaddrinfo() failed.");
+    }
 
     for (auto p = addr_infos; p != NULL; p = p->ai_next) {
       if ((fd_ = ::socket(p->ai_family, SOCK_DGRAM | SOCK_CLOEXEC,
-                          IPPROTO_UDP)) == -1)
+                          IPPROTO_UDP)) == -1) {
         continue;
+      }
 
       ::memset(&info_, 0, sizeof(*p));
       ::memcpy(&info_, p, sizeof(*p));
@@ -588,6 +722,36 @@ class socket {
       if (addr_infos) ::freeaddrinfo(addr_infos);
       __RUNTIME_ERROR__("udp::socket::create_socket: socket() failed.");
     }
+  }
+
+  // Create a socket and enable it for broadcasting data.
+  //
+  //  @params:
+  //      - string host.
+  //      - unsigned int port.
+  //
+  void create_broadcaster(const std::string &host, unsigned int port) {
+    if (fd_ != -1) return;
+
+    int b = 1;
+    struct hostent *hostent;
+    host_ = host;
+    port_ = port;
+
+    if ((hostent = ::gethostbyname(host_.c_str())) == NULL)
+      __RUNTIME_ERROR__(
+          "udp::socket::create_broadcaster: gethostbyname() failed.");
+
+    if ((fd_ = ::socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+      __RUNTIME_ERROR__("udp::socket::create_broadcaster: socket() failed.");
+
+    if (::setsockopt(fd_, SOL_SOCKET, SO_BROADCAST, &b, sizeof(b)) == -1)
+      __RUNTIME_ERROR__("udp::socket::create_broadcaster: setsockopt() failed");
+
+    broadcast_info_.sin_family = AF_INET;
+    broadcast_info_.sin_port = ::htons(port_);
+    broadcast_info_.sin_addr = *((struct in_addr *)hostent->h_addr);
+    ::memset(broadcast_info_.sin_zero, '\0', sizeof(broadcast_info_.sin_zero));
   }
 
  private:
@@ -605,6 +769,12 @@ class socket {
 
   // Network address used by the socket.
   struct addrinfo info_;
+
+  // Connector's address information for broadcasting data.
+  struct sockaddr_in broadcast_info_;
+
+  // Information on where the data come from.
+  struct sockaddr_storage source_info_;
 };
 
 #endif  // _WIN32
@@ -679,6 +849,9 @@ class event {
   // Sets the value of the file descriptor in the pollfd structure.
   // The variable 'event' of the pollfd structure is set with either POLLIN if
   // we are waiting for a read operation, or POLLOUT for a read operation
+  //
+  //  @param:
+  //    - int fd: The file descriptor associated to the detected event.
   void update(int fd) {
     if (unwatch_ || (!on_receive_.callback && !on_send_.callback)) return;
 
@@ -764,6 +937,10 @@ class poller {
  public:
   // Check if we are monitoring a specific socket.
   // Returns true if the socket is currently monitored.
+  //
+  // @param
+  //    - a reference on a const socket of type T.
+  //
   template <typename T>
   bool has(const T &s) {
     return events_.find(s.get_fd()) == events_.end() ? false : true;
@@ -772,6 +949,10 @@ class poller {
   // Add a socket to the polling model.
   // A socket must be added to the poller before being monitored for a specific
   // event.
+  //
+  //  @param:
+  //    - a reference on a const socket of type T: The socket to monitor.
+  //
   template <typename T>
   void add(const T &socket) {
     std::unique_lock<std::mutex> lock(mutex_events_);
@@ -787,11 +968,12 @@ class poller {
 
   // Set a read event to monitor on the given socket.
   //
-  // param:
-  // - const T& s: a reference on a const socket of type T.
-  // - const std::function<void(void)> &c: a reference on a const function
-  // object representing the callback to perform when there will be
-  // data to read on the socket.
+  // @params:
+  //    - a reference on a const socket of type T: The socket concerned by the
+  //    new registered event.
+  //    - a reference on a const function object which is the callback to
+  //    execute when a send operation has been performed for the specified
+  //    socket.
   template <typename T>
   void wait_for_read(const T &s, const std::function<void(void)> &c) {
     std::unique_lock<std::mutex> lock(mutex_events_);
@@ -804,11 +986,13 @@ class poller {
 
   // Set a write event to monitor on the given socket.
   //
-  // param:
-  // - const T& s: a reference on a const socket of type T.
-  // - const std::function<void(void)> &c: a reference on a const function
-  // object representing the callback to perform when writting data on the
-  // socket will not block.
+  // @params:
+  //    - a reference on a const socket of type T: The socket concerned by the
+  //    new registered event.
+  //    - a reference on a const function object which is the callback to
+  //    execute when a send operation has been performed for the specified
+  //    socket.
+  //
   template <typename T>
   void wait_for_write(const T &s, const std::function<void(void)> &c) {
     std::unique_lock<std::mutex> lock(mutex_events_);
@@ -820,6 +1004,11 @@ class poller {
   }
 
   // Stop monitoring the given socket.
+  //
+  //  @param:
+  //    - a reference on a const socket of type T: The socket to stop
+  //    remove from the polling model.
+  //
   template <typename T>
   void remove(const T &socket) {
     std::unique_lock<std::mutex> lock(mutex_events_);
@@ -868,6 +1057,12 @@ class poller {
 
   // Handles a specific detected event for a given file descriptor by adding
   // the execution of the dedicated callback to the job queue.
+  //
+  // @params:
+  //    - int file descriptor associated to the event.
+  //    - object event representing the type of event monitored.
+  //    - short revent: result from poll() for a registered event.
+  //
   void handle_event(int file_descriptor, event &event, short revent) {
     auto fd = file_descriptor;
     bool pollin = revent & POLLIN;
@@ -881,7 +1076,6 @@ class poller {
 
     workers_.enqueue_job([=]() {
       callback();
-
       std::unique_lock<std::mutex> lock(mutex_events_);
       if (events_.find(fd) == events_.end()) return;
 
@@ -984,7 +1178,9 @@ class client {
   ~client(void) { disconnect(); }
 
  public:
+  // Callback executed when a send operation has been performed.
   typedef std::function<void(bool, std::size_t)> async_send_callback;
+  // Callback executed when a receive operation has been performed.
   typedef std::function<void(bool, std::vector<char>)> async_receive_callback;
 
  public:
@@ -995,6 +1191,11 @@ class client {
   const socket &get_socket(void) const { return socket_; }
 
   // Connect the client to the given host/port.
+  //
+  // @params:
+  //  - string host.
+  //  - unsigned int port.
+  //
   void connect(const std::string &host, unsigned int port) {
     if (connected_)
       __LOGIC_ERROR__("tcp::client::connect: The client is already connected.");
@@ -1026,7 +1227,7 @@ class client {
     auto callback = request.second;
 
     try {
-      result = socket_.send(std::string(buffer.begin(), buffer.end()));
+      result = socket_.send(buffer, buffer.size());
       success = true;
     } catch (const std::exception &e) {
       __DISPLAY_ERROR__(e.what());
@@ -1075,12 +1276,26 @@ class client {
 
  public:
   // Async send operation.
+  //
+  //  @params:
+  //    - a reference on a const string: Data to send.
+  //    - a reference on a const async_send_callback: The callback to execute
+  //    when data has been sent.
+  //
+
   void async_send(const std::string &str, const async_send_callback &callback) {
     async_send(std::vector<char>(str.begin(), str.end()), callback);
   }
 
   // Async send operation.
-  void async_send(std::vector<char> data, const async_send_callback &callback) {
+  //
+  //  @params:
+  //    - a reference on a const vector of char: Data to send.
+  //    - a reference on a const async_send_callback; The callback to execute
+  //    when data has been sent.
+  //
+  void async_send(const std::vector<char> &data,
+                  const async_send_callback &callback) {
     if (!connected_)
       __LOGIC_ERROR__(
           "tcp::client::async_send: You must connect the client before trying "
@@ -1100,6 +1315,12 @@ class client {
   }
 
   // Async receive operation.
+  //
+  // @params:
+  //    - std::size_t size to read.
+  //    - a reference on a const async_receive_callback: The callback to execute
+  //    when data has been received.
+  //
   void async_receive(std::size_t size, const async_receive_callback &callback) {
     if (!connected_)
       __LOGIC_ERROR__(
@@ -1135,10 +1356,10 @@ class client {
   // Mutex to synchronize the queue of receive requests.
   std::mutex receive_requests_mutex_;
 
-  // A queue containing send requests.
+  // A queue containing the send requests.
   std::queue<std::pair<std::vector<char>, async_send_callback>> send_requests_;
 
-  // A queue containing receive requests.
+  // A queue containing the receive requests.
   std::queue<std::pair<std::size_t, async_receive_callback>> receive_requests_;
 };
 
@@ -1159,12 +1380,20 @@ class server {
 
   // This function provides a callback that the server stores and will execute
   // on a new connection.
+  //
+  // @param: The callback executed when a new client has been accepted.
+  //
   void on_connection(
       const std::function<void(const std::shared_ptr<client> &)> &callback) {
     callback_ = callback;
   }
 
-  // Runs the server on the giben host and port.
+  // Runs the server on the given host and port.
+  //
+  // @params:
+  //    - string host.
+  //    - unsigned int port.
+  //
   void run(const std::string &host, unsigned int port) {
     if (running_)
       __LOGIC_ERROR__("tcp::server::run: Server is already running.");
@@ -1237,29 +1466,272 @@ namespace udp {
 // UDP client.
 class client {
  public:
-  client(void) : poller_(get_poller()) {}
-  ~client(void) {}
+  client(void) : poller_(get_poller()), broadcast_mode_(false) {}
+
+  client(const client &) = delete;
+
+  client &operator=(const client &) = delete;
+
+  ~client(void) { stop(); }
+
+ public:
+  // Callback executed when a send operation has been performed.
+  typedef std::function<void(int)> async_send_callback;
+
+ public:
+  // Returns true if the broadcast mode is enabled, false otherwise.
+  bool broadcast_mode_enabled(void) const { return broadcast_mode_; }
+
+  // Returns the client's socket.
+  const socket &get_socket(void) const { return socket_; }
+
+  // Initialize the client.
+  //
+  //@params:
+  //    - string host.
+  //    - unsigned int port.
+  //    - broadcast_mode: set to true to enable broadcast.
+  //
+  void init(const std::string host, unsigned int port, bool broadcast_mode) {
+    socket_.init_datagram_socket(host, port, broadcast_mode);
+    broadcast_mode_ = broadcast_mode;
+    poller_->add<udp::socket>(socket_);
+  }
+
+  // Stop the client.
+  void stop(void) {
+    broadcast_mode_ = false;
+    poller_->remove<udp::socket>(socket_);
+    socket_.close();
+  }
+
+ private:
+  // Send callback.
+  void on_send(void) {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    if (send_requests_.empty()) return;
+
+    int result = -1;
+    auto request = send_requests_.front();
+    auto buffer = request.first;
+    auto callback = request.second;
+
+    try {
+      if (broadcast_mode_)
+        result = socket_.broadcast(buffer);
+      else
+        result = socket_.sendto(buffer);
+    } catch (const std::exception &e) {
+      __DISPLAY_ERROR__(e.what());
+    }
+
+    send_requests_.pop();
+
+    if (send_requests_.empty())
+      poller_->wait_for_write<udp::socket>(socket_, nullptr);
+
+    if (callback) callback(result);
+  }
+
+ public:
+  // Asynchronous send of data.
+  //
+  // @params:
+  //    - a reference on a const string: The data to send.
+  //    - a reference on a const async_send_callback: The callback to execute
+  //    when the data has been sent.
+  //
+  void async_send(const std::string &str, const async_send_callback &callback) {
+    async_send(std::vector<char>(str.begin(), str.end()), callback);
+  }
+
+  // Asynchronous send of data.
+  //
+  // @params:
+  //    - a reference on a const vector of char: Data to send.
+  //    - a reference on a const async_send_callback: The callback to execute
+  //    when the data has been sent.
+  //
+  void async_send(const std::vector<char> &data,
+                  const async_send_callback &callback) {
+    if (broadcast_mode_)
+      __LOGIC_ERROR__(
+          "udp::client::async_send: Broadcast mode enabled. Use "
+          "'async_broadcast' instead of 'async_send'.");
+
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    if (callback) {
+      send_requests_.push(std::make_pair(data, callback));
+      poller_->wait_for_write<udp::socket>(socket_,
+                                           std::bind(&client::on_send, this));
+    } else {
+      __DISPLAY_ERROR__(
+          "udp::client::async_send: You must provide a callback in order to "
+          "perform an asynchronous send of data.");
+    }
+  }
+
+  // Asynchronous broadcast of data.
+  //
+  // @params:
+  //    - a reference on a const string: Data to broadcast.
+  //    - a reference on a const async_send_callback: The callback to execute
+  //    when the data has been broadcast.
+  //
+  void async_broadcast(const std::string &str,
+                       const async_send_callback &callback) {
+    async_broadcast(std::vector<char>(str.begin(), str.end()), callback);
+  }
+
+  // Asynchronous broadcast of data.
+  //
+  // @params:
+  //    - a reference on a const vector of char: Data to broadcast.
+  //    - a reference on a const async_send_callback: The callback to execute
+  //    when the data has been broadcast.
+  //
+  void async_broadcast(const std::vector<char> &data,
+                       const async_send_callback &callback) {
+    if (!broadcast_mode_)
+      __LOGIC_ERROR__(
+          "udp::client::async_broadcast: Broadcast mode not enabled. Use "
+          "'async_send' instead of 'async_broadcast'.");
+
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    if (callback) {
+      send_requests_.push(std::make_pair(data, callback));
+      poller_->wait_for_write<udp::socket>(socket_,
+                                           std::bind(&client::on_send, this));
+    } else {
+      __DISPLAY_ERROR__(
+          "udp::client::async_send: You must provide a callback in order to "
+          "perform an asynchronous send of data.");
+    }
+  }
 
  private:
   // Client's socket.
   socket socket_;
 
+  // Mutex to synchronize the queue of send requests.
+  std::mutex mutex_;
+
   // A smart pointer on the polling instance.
   std::shared_ptr<poller> poller_;
+
+  // Boolean to know if the broadcast mode is enabled.
+  std::atomic_bool broadcast_mode_;
+
+  // A queue containing the send requests.
+  std::queue<std::pair<std::vector<char>, async_send_callback>> send_requests_;
 };
 
 // UDP server.
 class server {
  public:
-  server(void) : poller_(get_poller()) {}
-  ~server(void) {}
+  server(void) : bound_(false), poller_(get_poller()), callback_(nullptr) {}
+
+  server(const server &) = delete;
+
+  server &operator=(const server &) = delete;
+
+  ~server(void) { stop(); }
+
+ public:
+  // Callback executed when a receive operation has been performed.
+  typedef std::function<void(std::vector<char>, int)> async_receive_callback;
+
+ public:
+  // Returns true if the socket is bound, false otherwise.
+  bool is_running(void) const { return bound_; }
+
+  // Returns the server's socket.
+  const socket &get_socket(void) const { return socket_; }
+
+ private:
+  // Receive callback.
+  void on_receive(void) {
+    std::mutex mutex;
+    std::unique_lock<std::mutex> lock(mutex);
+
+    int result = -1;
+    std::vector<char> buffer;
+
+    buffer.reserve(tools::BUFFER_SIZE);
+
+    try {
+      result = socket_.recvfrom(buffer);
+    } catch (const std::exception &e) {
+      __DISPLAY_ERROR__(e.what());
+    }
+
+    if (callback_) {
+      callback_(std::move(buffer), result);
+      poller_->wait_for_read<udp::socket>(socket_,
+                                          std::bind(&server::on_receive, this));
+    }
+  }
+
+ public:
+  // Bind the server on the given host/port.
+  //
+  // @params:
+  //    - string host.
+  //    - unsigned int port.
+  //
+  void bind(const std::string &host, unsigned int port) {
+    if (bound_)
+      __LOGIC_ERROR__("udp::server::bind: Server is already bound to" + host +
+                      ":" + std::to_string(port) + ".");
+
+    socket_.bind(host, port);
+    poller_->add<udp::socket>(socket_);
+    poller_->wait_for_read<udp::socket>(socket_,
+                                        std::bind(&server::on_receive, this));
+    bound_ = true;
+  }
+
+  // Asynchronous receive of data.
+  //
+  // @param: a reference on a const async_receive_callback which will be
+  // executed execute when the receive operation has been performed.
+  //
+  void async_recvfrom(const async_receive_callback &callback) {
+    if (!bound_)
+      __LOGIC_ERROR__(
+          "udp::socket::async_recvfrom: You need to bind the server on a "
+          "host/port before using it.");
+
+    if (callback) {
+      callback_ = callback;
+    } else {
+      __DISPLAY_ERROR__(
+          "udp::client::async_recvfrom: You must provide a callback in order "
+          "to perform an asynchronous receive of data.");
+    }
+  }
+
+  // Stop the server.
+  void stop(void) {
+    bound_ = false;
+    poller_->remove<udp::socket>(socket_);
+    socket_.close();
+  }
 
  private:
   // Server's socket.
   socket socket_;
 
+  std::atomic_bool bound_;
+
   // A smart pointer on the polling instance.
   std::shared_ptr<poller> poller_;
+
+  // The callback executed when data has been received.
+  std::function<void(std::vector<char>, int)> callback_;
 };
 
 }  // namespace udp

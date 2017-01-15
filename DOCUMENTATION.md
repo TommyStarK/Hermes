@@ -91,7 +91,7 @@ host/service for the client. Every operation of the TCP socket is synchronous.
 
   // Send data.
   void send(const std::string &data);
-  void send(std::vector<char> data, std::size_t size);
+  void send(const std::vector<char> &data, std::size_t size);
 
   // Read data.
   std::vector<char> receive(std::size_t size_to_read = hermes::tools::BUFFER_SIZE);
@@ -197,6 +197,9 @@ when the socket is ready for read or write data. Callbacks must be provided for 
 
   using namespace hermes::network::tcp;
 
+  typedef std::function<void(bool, std::size_t)> async_send_callback;
+  typedef std::function<void(bool, std::vector<char>)> async_receive_callback;
+
   // Default constructor.
   client(void);
 
@@ -218,7 +221,7 @@ when the socket is ready for read or write data. Callbacks must be provided for 
 
   // Asynchronous send operation.
   void async_send(const std::string &data, const async_send_callback &callback);
-  void async_send(std::vector<char> data, const async_send_callback &callback);
+  void async_send(const std::vector<char> &data, const async_send_callback &callback);
 
   // Asynchronous receive operation.
   void async_receive(std::size_t size_to_read, const async_receive_callback &callback);
