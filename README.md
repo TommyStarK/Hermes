@@ -18,8 +18,8 @@
 
 ## Usage
 
-Hermes is a header only library, there is nothing to build and to link with your program. You just need to include
-the `Hermes.hpp` header.
+Hermes is a header only library, there is nothing to build and to link with your program.
+You just need to include the `Hermes.hpp` header, to us the `library`.
 
  - Download Hermes:
 
@@ -40,8 +40,8 @@ A [Full documentation](https://github.com/TommyStarK/Hermes/blob/master/DOCUMENT
 
 ## Contribution
 
-Each Contribution is welcomed and encouraged. I do not claim to cover each use cases nor completely master the c++. If you encounter a non sense or any trouble, you can open an issue
-and I will be happy to discuss about it.
+Each Contribution is welcomed and encouraged. I do not claim to cover each use cases nor completely master the c++. If you encounter a non sense or
+any trouble, you can open an issue and I will be happy to discuss about it.
 
 ## Thanks
 

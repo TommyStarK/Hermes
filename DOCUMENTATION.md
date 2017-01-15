@@ -1,11 +1,10 @@
 # Hermes documentation
 
 
-  Hermes is a lightweight, cross-platform, asynchronous, C++11 network library. Hermes provides an user-friendly API
-with which you can easily create server or client following either TCP or UDP protocol. Hermes is based on a polling
-model using a thread pool in order to offer an asynchronous I/O model to handle events between the server and the
-connected clients. Server and client work asynchronously and the public Hermes API allows only to perform asynchronous
-operations.
+Hermes is a lightweight, cross-platform, asynchronous, C++11 network library. Hermes provides an user-friendly API with which
+you can easily create server or client following either TCP or UDP protocol. Hermes is based on a polling model using a thread
+pool in order to offer an asynchronous I/O model to handle events between the server and the connected clients. Server and
+client work asynchronously and the public Hermes API allows only to perform asynchronous operations.
 To use Hermes, you just need to include the `Hermes.hpp` header in your code.
 
 
@@ -26,9 +25,9 @@ Thanks to the Hermes TCP API, you can easily create either TCP server or TCP cli
 
 ### Socket:
 
-  Basic abstraction of the TCP socket features for unix and windows socket. The TCP socket is able to perform the basic
-server-side and client-side operations such as binding the socket and listening on it for the server, or connecting the
-socket to a given host/service for the client. Every operation of the TCP socket is synchronous.
+Basic abstraction of the TCP socket features for unix and windows socket. The TCP socket is able to perform the basic server-side
+and client-side operations such as binding the socket and listening on it for the server, or connecting the socket to a given
+host/service for the client. Every operation of the TCP socket is synchronous.
 
 ```cpp
   #include "Hermes.hpp"
@@ -87,9 +86,8 @@ socket to a given host/service for the client. Every operation of the TCP socket
 ### Server
 
 
-  The TCP server class allows to create and use an asynchronous server. The server is using the polling model to detect
-when a client is trying to connect to the server. Before running the server, you must provide a callback to execute in
-case of connection.
+The TCP server class allows to create and use an asynchronous server. The server is using the polling model to detect when a client
+is trying to connect to the server. Before running the server, you must provide a callback to execute incase of connection.
 
 
 #### Methods:
