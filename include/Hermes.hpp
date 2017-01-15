@@ -1190,29 +1190,6 @@ class client {
   // Returns the client's socket.
   const socket &get_socket(void) const { return socket_; }
 
-  // Connect the client to the given host/port.
-  //
-  // @params:
-  //  - string host.
-  //  - unsigned int port.
-  //
-  void connect(const std::string &host, unsigned int port) {
-    if (connected_)
-      __LOGIC_ERROR__("tcp::client::connect: The client is already connected.");
-    socket_.connect(host, port);
-    poller_->add<tcp::socket>(socket_);
-    connected_ = true;
-  }
-
-  // Disconnect the client.
-  void disconnect(void) {
-    if (!connected_) return;
-
-    connected_ = false;
-    poller_->remove<tcp::socket>(socket_);
-    socket_.close();
-  }
-
  private:
   // Send callback.
   void on_send(void) {
@@ -1275,6 +1252,20 @@ class client {
   }
 
  public:
+  // Connect the client to the given host/port.
+  //
+  // @params:
+  //  - string host.
+  //  - unsigned int port.
+  //
+  void connect(const std::string &host, unsigned int port) {
+    if (connected_)
+      __LOGIC_ERROR__("tcp::client::connect: The client is already connected.");
+    socket_.connect(host, port);
+    poller_->add<tcp::socket>(socket_);
+    connected_ = true;
+  }
+
   // Async send operation.
   //
   //  @params:
@@ -1340,6 +1331,15 @@ class client {
     }
   }
 
+  // Disconnect the client.
+  void disconnect(void) {
+    if (!connected_) return;
+
+    connected_ = false;
+    poller_->remove<tcp::socket>(socket_);
+    socket_.close();
+  }
+
  private:
   // Client's socket.
   socket socket_;
@@ -1378,6 +1378,25 @@ class server {
   // Returns true or false whether the server is running.
   bool is_running(void) const { return running_; }
 
+  // Returns the server's socket.
+  const socket &get_socket(void) const { return socket_; }
+
+ private:
+  // Function executed when a client is trying to connect to this server.
+  void on_accept(void) {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    try {
+      auto new_client = std::make_shared<client>(socket_.accept());
+      if (callback_) callback_(new_client);
+      clients_.insert(new_client);
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+      stop();
+    }
+  }
+
+ public:
   // This function provides a callback that the server stores and will execute
   // on a new connection.
   //
@@ -1422,21 +1441,6 @@ class server {
     socket_.close();
     for (auto &client : clients_) client->disconnect();
     clients_.clear();
-  }
-
- private:
-  // Function executed when a client is trying to connect to this server.
-  void on_accept(void) {
-    std::unique_lock<std::mutex> lock(mutex_);
-
-    try {
-      auto new_client = std::make_shared<client>(socket_.accept());
-      if (callback_) callback_(new_client);
-      clients_.insert(new_client);
-    } catch (const std::exception &e) {
-      std::cerr << e.what() << std::endl;
-      stop();
-    }
   }
 
  private:

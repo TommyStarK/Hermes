@@ -167,6 +167,9 @@ a client is trying to connect to the server. Before running the server, you must
   // Returns true or false whether the server is already running.
   bool is_running(void) const;
 
+  // Returns the server's socket.
+  const socket &get_socket(void) const = delete;
+
   // Provides the callback which will be executed on a new connection. Represents the server behavior.
   // A callback must be provided using the 'on_connection' method before running the server.
   void on_connection(const std::function<void(const std::shared_ptr<client> &)> &callback);
@@ -385,7 +388,7 @@ packets to host(s)/port.
 
   // Initialize the udp client.
   // Set broadcast_mode to true if you want to broadcast packets to various machine.
-  void init(const std::string &host, unsigned int port, bool, broadcast_mode);
+  void init(const std::string &host, unsigned int port, bool broadcast_mode);
 
   // Send data.
   std::size_t sendto(const std::string &str);
@@ -454,7 +457,7 @@ void stop(void);
 
 ```cpp
   #include "Hermes.hpp"
-  
+
   using namespace hermes::network::udp;
 
   int main(void) {
