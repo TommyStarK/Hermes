@@ -40,7 +40,6 @@ before_script:
     - $CXX --version
     - $CC --version
     - ${CMAKE_BINARY} --version
-    - lcov --directory . --zerocounters
 
 
 script:
