@@ -1,6 +1,6 @@
 ## TCP Socket:
 
-Basic abstraction of the TCP socket features for unix and windows socket. The TCP socket provides blocking stream-oriented socket functionalies.
+Basic abstraction of the TCP socket features for unix and windows socket. The TCP socket provides blocking stream-oriented socket functionalities.
 
 
 ### public API:
