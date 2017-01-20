@@ -26,7 +26,7 @@ a client is trying to connect to the server. Before running the server, you must
   bool is_running(void) const;
 
   // Returns the server's socket.
-  const socket &get_socket(void) const = delete;
+  const socket &get_socket(void) const;
 
   // Provides the callback which will be executed on a new connection. Represents the server behavior.
   // A callback must be provided using the 'on_connection' method before running the server.
