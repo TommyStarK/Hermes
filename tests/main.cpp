@@ -18,7 +18,7 @@ SCENARIO("testing workers (Thread pool)") {
   }
 
   WHEN("giving 4 jobs to process to a thread pool") {
-    hermes::tools::workers workers();
+    hermes::tools::workers worker;
 
     REQUIRE_NOTHROW(workers.enqueue_job([]() {}));
     REQUIRE_NOTHROW(workers.enqueue_job([]() {}));

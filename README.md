@@ -1,5 +1,5 @@
 
-# Hermes    [![Build Status](https://travis-ci.org/TommyStarK/Hermes.svg?branch=master)](https://travis-ci.org/TommyStarK/Hermes) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE) [![Coverage Status](https://coveralls.io/repos/github/TommyStarK/Hermes/badge.svg?branch=master)](https://coveralls.io/github/TommyStarK/Hermes?branch=master)
+# Hermes    [![Build Status](https://travis-ci.org/TommyStarK/Hermes.svg?branch=master)](https://travis-ci.org/TommyStarK/Hermes) [![Coverage Status](https://coveralls.io/repos/github/TommyStarK/Hermes/badge.svg?branch=master)](https://coveralls.io/github/TommyStarK/Hermes?branch=master) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 
 
