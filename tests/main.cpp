@@ -1,4 +1,4 @@
-xc#define CATCH_CONFIG_MAIN
+#define CATCH_CONFIG_MAIN
 #include "Hermes.hpp"
 #include "catch.hpp"
 
