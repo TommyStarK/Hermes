@@ -104,7 +104,7 @@ class workers {
     if (workers_nbr > std::thread::hardware_concurrency())
       __LOGIC_ERROR__(
           "tools::workers::constructor: Number of workers is greater than the"
-          "number of concurrent threads supported by the system\n.");
+          " number of concurrent threads supported by the system.");
 
     // We start the workers.
     for (unsigned int i = 0; i < workers_nbr; ++i)
