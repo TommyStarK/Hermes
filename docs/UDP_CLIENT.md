@@ -82,3 +82,38 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
   }
 
 ```
+
+
+### Example: Broadcasting "Hello world!"
+
+
+
+```cpp
+  #include "Hermes.hpp"
+
+
+  using namespace hermes::network::udp;
+
+
+
+  int main(int ac, char **av) {
+    client client;
+
+
+    if (ac != 2) {
+       std::cerr << "[Usage]: ./binary_name host.\n";
+       return 1;
+    }
+
+    client.init(av[1], 27017, true);
+
+    client.async_send("Hello world!\n", [](int bytes_sent) {
+    	std::cout << "Number of bytes sent: " << bytes_sent << std::endl;
+    });
+    
+
+    hermes::tools::wait_for_signal(SIGINT);
+
+    return 0;
+  }
+```

@@ -16,7 +16,7 @@ Assuming you want to compile a file containing some code using Hermes' features.
   g++ -std=c++11 your_file.cpp -pthread -o binary_name
 ```
 
-# Summary:
+## Summary:
 
 - TCP API
 
@@ -44,3 +44,4 @@ Assuming you want to compile a file containing some code using Hermes' features.
   - [Client](docs/UDP_CLIENT.md)
     - public API
     - example: Hello world!
+    - example: Broadcasting "Hello world!"
