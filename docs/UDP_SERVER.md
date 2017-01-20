@@ -3,7 +3,7 @@
 
 The UDP server class allows to create and use an asynchronous server waiting for incoming packets on a host/port.
 The server must be bound to a given host/port before being able to wait for incoming packets. A callback must be
-provided to the 'async_recvfrom' function, it represents the server behavior when it receives data.
+provided to the 'async_recvfrom' method, it represents the server behavior when it receives data.
 
 
 ### public API:
@@ -12,7 +12,7 @@ provided to the 'async_recvfrom' function, it represents the server behavior whe
 ```cpp
 #include "Hermes.hpp"
 
-// The callback executed when the server receives incoming packets.
+// The callback executed when the server receives data.
 typedef std::function<void(std::vector<char>, int)> async_receive_callback;
 
 // Default constructor.

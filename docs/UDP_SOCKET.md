@@ -1,9 +1,7 @@
 ## UDP Socket
 
 
-Basic abstraction of the UDP socket features for unix and windows socket. The UDP socket is able to perform the basic server-side
-and client-side operations such as binding the socket and waiting for incoming packet on a specific host/port or sending/broadcasting
-packets to host(s)/port.
+Basic abstraction of the UDP socket features for unix and windows socket. The UDP socket provides blocking datagram-oriented socket functionalities.
 
 
 ### public API:
@@ -17,7 +15,7 @@ packets to host(s)/port.
   // Default constructor.
   socket(void);
 
-  // Copy constructor
+  // Copy constructor.
   socket(socket &socket) = delete;
 
   // Assignment operator.
@@ -58,7 +56,7 @@ packets to host(s)/port.
   //
 
   // Initialize the udp client.
-  // Set broadcast_mode to true if you want to broadcast packets to various machine.
+  // Set broadcast_mode to true if you want to broadcast packets to several machines.
   void init(const std::string &host, unsigned int port, bool broadcast_mode);
 
   // Send data.

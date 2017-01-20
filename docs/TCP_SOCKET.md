@@ -1,8 +1,6 @@
 ## TCP Socket:
 
-Basic abstraction of the TCP socket features for unix and windows socket. The TCP socket is able to perform the basic server-side
-and client-side operations such as binding the socket and listening on it for the server, or connecting the socket to a given
-host/service for the client. Every operation of the TCP socket is synchronous.
+Basic abstraction of the TCP socket features for unix and windows socket. The TCP socket provides blocking stream-oriented socket functionalies.
 
 
 ### public API:
