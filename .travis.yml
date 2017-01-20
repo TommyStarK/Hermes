@@ -24,6 +24,7 @@ addons:
 before_install:
     - wget https://cmake.org/files/v3.4/cmake-3.4.0-Linux-x86_64.tar.gz --no-check-certificate
     - tar -xzvf cmake-3.4.0-Linux-x86_64.tar.gz
+    - pip install --user cpp-coveralls
 
 install:
     - if [ "$CXX" = "g++" ]; then export CXX="g++-5" CC="gcc-5"; fi
@@ -38,4 +39,8 @@ before_script:
     - make
 
 script:
-  - ./tests_hermes
+    - ./configure --enable-gcov && make && make check
+    - ./tests_hermes
+
+after_success:
+    - coveralls --exclude lib --exclude tests --gcov-options '\-lp'
