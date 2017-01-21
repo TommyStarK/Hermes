@@ -3,4 +3,18 @@
 using namespace hermes;
 using namespace hermes::network;
 
-int main(void) { return 0; }
+void tests_tcp_socket(void) {
+	tcp::socket socket;
+
+	assert(socket.get_fd() == -1);
+	assert(socket.get_host() == "");
+	assert(socket.get_port() == 0);
+}
+
+int __cdecl main(void) {
+	tests_tcp_socket();
+	std::cout << "Working :)\n";
+	std::cout << "Working :)\n";
+	std::cout << "Working :)\n";
+	return 0;
+}

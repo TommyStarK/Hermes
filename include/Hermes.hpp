@@ -2,6 +2,8 @@
 
 #ifdef _WIN32
 #include <WinSock2.h>
+#include <assert.h>
+#define UNUSED(x) __pragma(warning(suppress:4100)) x
 #else
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -228,10 +230,10 @@ class socket {
   SOCKET get_fd(void) const { return fd_; }
 
   //
-  const std::string &get_host(void) const { return ""; }
+  const std::string &get_host(void) const { return host_; }
 
   //
-  unsigned int get_port(void) const { return 0; }
+  unsigned int get_port(void) const { return port_; }
 
   //
   bool is_socket_bound(void) const { return false; }
@@ -239,20 +241,20 @@ class socket {
  public:
   //
   void bind(const std::string &host, unsigned int port) {
-    [[gnu::unused]] host;
-    [[gnu::unused]] port;
+	  UNUSED(host);
+	  UNUSED(port);
   }
 
   //
-  void listen(unsigned int backlog) { [[gnu::unused]] backlog; }
+  void listen(unsigned int backlog) { UNUSED(backlog); }
 
   //
   tcp::socket accept(void) { return {0, "", 0}; }
 
   //
   void connect(const std::string &host, unsigned int port) {
-    [[gnu::unused]] host;
-	[[gnu::unused]] port;
+	  UNUSED(host);
+	  UNUSED(port);
   }
 
   //
@@ -262,16 +264,14 @@ class socket {
 
   //
   INT send(const std::vector<char> &data, INT size) {
-    [[gnu::unused]] data;
-    [[gnu::unused]] size;
+	  UNUSED(data);
+	  UNUSED(size);
     return 0;
   }
 
   std::vector<char> receive(INT size_to_read) {
-    std::vector<char> buffer;
-
-    [[gnu::unused]] size_to_read;
-    return buffer;
+	  std::vector<char> buffer(size_to_read, 0);
+	  return buffer;
   }
 
   //
@@ -591,10 +591,10 @@ class socket {
   SOCKET get_fd(void) const { return fd_; }
 
   //
-  const std::string &get_host(void) const { return ""; }
+  const std::string &get_host(void) const { return host_; }
 
   //
-  unsigned int get_port(void) const { return 0; }
+  unsigned int get_port(void) const { return port_; }
 
   //
   bool is_socket_bound(void) const { return false; }
@@ -603,9 +603,9 @@ class socket {
   //
   void init_datagram_socket(const std::string &host, unsigned int port,
                             bool broadcast_mode) {
-    [[gnu::unused]] host;
-    [[gnu::unused]] port;
-    [[gnu::unused]] broadcast_mode;
+	  UNUSED(host);
+	  UNUSED(port);
+	  UNUSED(broadcast_mode);
   }
 
   //
@@ -615,9 +615,9 @@ class socket {
 
   //
   INT sendto(const std::vector<char> &data, INT size) {
-    [[gnu::unused]] data;
-    [[gnu::unused]] size;
-    return 0;
+	  UNUSED(data);
+	  UNUSED(size);
+	  return 0;
   }
 
   //
@@ -627,20 +627,20 @@ class socket {
 
   //
   INT broadcast(const std::vector<char> &data, INT size) {
-    [[gnu::unused]] data;
-    [[gnu::unused]] size;
+	  UNUSED(data);
+	  UNUSED(size);
     return 0;
   }
 
   //
   void bind(const std::string &host, unsigned int port) {
-    [[gnu::unused]] host;
-    [[gnu::unused]] port;
+	  UNUSED(host);
+	  UNUSED(port);
   }
 
   //
   INT recvfrom(std::vector<char> &buffer) {
-    [[gnu::unused]] buffer;
+	  UNUSED(buffer);
     return 0;
   }
 
@@ -942,34 +942,34 @@ class poller {
   //
   template <typename T>
   bool has(const T &socket) {
-    [[gnu::unused]] socket;
+	  UNUSED(socket);
     return true;
   }
 
   //
   template <typename T>
   void add(const T &socket) {
-    [[gnu::unused]] socket;
+	  UNUSED(socket);
   }
 
   //
   template <typename T>
   void wait_for_read(const T &s, const std::function<void(void)> &c) {
-    [[gnu::unused]] s;
-    [[gnu::unused]] c;
+	  UNUSED(s);
+	  UNUSED(c);
   }
 
   //
   template <typename T>
   void wait_for_write(const T &s, const std::function<void(void)> &c) {
-    [[gnu::unused]] s;
-    [[gnu::unused]] c;
+	  UNUSED(s);
+	  UNUSED(c);
   }
 
   //
   template <typename T>
   void remove(const T &socket) {
-    [[gnu::unused]] socket;
+	  UNUSED(socket);
   }
 
  private:
