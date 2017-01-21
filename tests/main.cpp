@@ -119,13 +119,14 @@ SCENARIO("testing TCP socket: client operations") {
         REQUIRE_NOTHROW(default_socket.bind("127.0.0.1", 27017));
         REQUIRE_NOTHROW(default_socket.listen());
         auto client = std::make_shared<tcp::socket>(default_socket.accept());
-        std::string rcv(client->receive().data());
+	std::vector<char> data = client->receive();
+        std::string rcv(data.data());
         REQUIRE(rcv == "test ok :)");
         REQUIRE(rcv.size() == 10);
         REQUIRE_NOTHROW(default_socket.close());
       });
 
-      std::this_thread::sleep_for(std::chrono::seconds(1));
+      std::this_thread::sleep_for(std::chrono::seconds(2));
 
       std::thread client([&socket_for_test]() {
         REQUIRE_NOTHROW(socket_for_test.connect("127.0.0.1", 27017));

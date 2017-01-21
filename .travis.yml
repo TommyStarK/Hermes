@@ -26,13 +26,13 @@ addons:
 before_install:
     - wget https://cmake.org/files/v3.4/cmake-3.4.0-Linux-x86_64.tar.gz --no-check-certificate
     - tar -xzvf cmake-3.4.0-Linux-x86_64.tar.gz
-    - wget http://ftp.de.debian.org/debian/pool/main/l/lcov/lcov_1.11.orig.tar.gz
-    - tar xf lcov_1.11.orig.tar.gz
-    - sudo make -C lcov-1.11/ install
-    - gem install coveralls-lcov
+    - sudo apt-get install valgrind libcurl4-openssl-dev
+    - sudo pip install codecov
+
 
 install:
     - if [ "$CXX" = "g++" ]; then export CXX="g++-5" CC="gcc-5"; fi
+    - sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-5 90
 
 before_script:
     - echo $CC
@@ -45,10 +45,8 @@ before_script:
 script:
     - ${CMAKE_BINARY} .
     - make
-    - ./tests_hermes
+    - valgrind ./tests_hermes
+    - gcov-5 tests/main.cpp
 
 after_success:
-    - lcov --directory . --capture --output-file coverage.info
-    - lcov --remove coverage.info 'tests/*' '/usr/*' --output-file coverage.info
-    - lcov --list coverage.info
-    - coveralls-lcov --repo-token ${COVERALLS_REPO_TOKEN} coverage.info
+    - bash <(curl -s https://codecov.io/bash)
