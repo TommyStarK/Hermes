@@ -66,7 +66,7 @@ void stop(void);
     // The calling thread will block until the specified signal is caught.
     // @param : int signal_number
     //
-    hermes::tools::wait_for_signal(SIGINT);
+    hermes::tools::signal::wait_for(SIGINT);
 
     return 0;
   }

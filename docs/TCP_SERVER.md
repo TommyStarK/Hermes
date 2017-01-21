@@ -75,7 +75,7 @@ a client is trying to connect to the server. Before running the server, you must
     // The calling thread will block until the specified signal is caught.
     // @param : int signal_number
     //
-    hermes::tools::wait_for_signal(SIGINT);
+    hermes::tools::signal::wait_for(SIGINT);
 
     return 0;
   }

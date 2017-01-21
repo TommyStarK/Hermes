@@ -76,7 +76,7 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
     // The calling thread will block until the specified signal is caught.
     // @param : int signal_number
     //
-    hermes::tools::wait_for_signal(SIGINT);
+    hermes::tools::signal::wait_for(SIGINT);
 
     return 0;
   }
@@ -114,7 +114,7 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
     // The calling thread will block until the specified signal is caught
     // @param: int signal_number.
     //
-    hermes::tools::wait_for_signal(SIGINT);
+    hermes::tools::signal::wait_for(SIGINT);
 
     return 0;
   }
