@@ -26,7 +26,7 @@ addons:
 before_install:
     - wget https://cmake.org/files/v3.4/cmake-3.4.0-Linux-x86_64.tar.gz --no-check-certificate
     - tar -xzvf cmake-3.4.0-Linux-x86_64.tar.gz
-    - sudo apt-get install valgrind libcurl4-openssl-dev
+    - sudo apt-get install libcurl4-openssl-dev
     - sudo pip install codecov
 
 
@@ -45,8 +45,8 @@ before_script:
 script:
     - ${CMAKE_BINARY} .
     - make
-    - valgrind ./tests_hermes
-    - gcov-5 tests/main.cpp
+    - ./tests_hermes
+    - gcov-5 tests/unix/main.cpp
 
 after_success:
     - bash <(curl -s https://codecov.io/bash)

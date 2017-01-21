@@ -119,7 +119,7 @@ SCENARIO("testing TCP socket: client operations") {
         REQUIRE_NOTHROW(default_socket.bind("127.0.0.1", 27017));
         REQUIRE_NOTHROW(default_socket.listen());
         auto client = std::make_shared<tcp::socket>(default_socket.accept());
-	std::vector<char> data = client->receive();
+        std::vector<char> data = client->receive();
         std::string rcv(data.data());
         REQUIRE(rcv == "test ok :)");
         REQUIRE(rcv.size() == 10);
@@ -142,29 +142,48 @@ SCENARIO("testing TCP socket: client operations") {
 }
 
 //
-// TCP client tests section
+// TCP server and client tests section
 //
-SCENARIO("testing TCP client") {
-  WHEN("constructing a default TCP client") {
-    tools::TIMEOUT = 0;
-
+SCENARIO("testing TCP server and client operations") {
+  GIVEN("default TCP server and client") {
     tcp::client client;
-
-    REQUIRE(!client.is_connected());
-    set_poller(nullptr);
-  }
-}
-
-//
-// TCP server tests section
-//
-SCENARIO("testing TCP server") {
-  WHEN("constructing a default TCP server") {
-    tools::TIMEOUT = 0;
-
     tcp::server server;
 
-    REQUIRE(!server.is_running());
+    WHEN("constructing a default TCP server and client") {
+      REQUIRE(!client.is_connected());
+      REQUIRE(!server.is_running());
+    }
+
+    WHEN("testing asynchronous receive/send of data") {
+      std::thread s([&server]() {
+        server.on_connection([](const std::shared_ptr<tcp::client>& client) {
+          client->async_receive(1024, [](bool success, std::vector<char> data) {
+            if (success) {
+              std::string res(data.data());
+
+              REQUIRE(res == "Hello world!\n");
+            }
+          });
+        });
+
+        REQUIRE_NOTHROW(server.run("127.0.0.1", 27017));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      });
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+      std::thread c([&client]() {
+        REQUIRE_NOTHROW(client.connect("127.0.0.1", 27017));
+        client.async_send("Hello world!\n",
+                          [](bool success, std::size_t bytes_sent) {
+                            if (success) REQUIRE(bytes_sent == 13);
+                          });
+      });
+
+      REQUIRE_NOTHROW(s.join());
+      REQUIRE_NOTHROW(c.join());
+    }
+
     set_poller(nullptr);
   }
 }
@@ -288,31 +307,44 @@ SCENARIO("testing UDP socket: sending/receiving data") {
 }
 
 //
-// UDP client tests section
+// UDP server/client tests section
 //
-SCENARIO("testing UDP client") {
-  WHEN("constructing a default UDP client") {
-    tools::TIMEOUT = 0;
-
+SCENARIO("testing UDP server and client operations") {
+  GIVEN("default UDP client and server") {
+    udp::server server;
     udp::client client;
 
-    REQUIRE(!client.broadcast_mode_enabled());
-    set_poller(nullptr);
+    WHEN("constructing a default UDP server and client") {
+      REQUIRE(!server.is_running());
+      REQUIRE(!client.broadcast_mode_enabled());
+    }
+
+    WHEN("testing asynchronous send/receive of data") {
+      std::thread s([&server]() {
+        REQUIRE_NOTHROW(server.bind("", 27017));
+
+        server.async_recvfrom([](std::vector<char> buffer, int bytes_received) {
+          std::string res(buffer.data());
+          REQUIRE(bytes_received == 13);
+          REQUIRE(res == "Hello world!\n");
+        });
+
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      });
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+      std::thread c([&client]() {
+        REQUIRE_NOTHROW(client.init("127.0.0.1", 27017, false));
+        client.async_send("Hello world!\n",
+                          [](int bytes_sent) { REQUIRE(bytes_sent == 13); });
+      });
+
+      REQUIRE_NOTHROW(s.join());
+      REQUIRE_NOTHROW(c.join());
+    }
   }
-}
-
-//
-// UDP server tests section
-//
-SCENARIO("testing UDP server") {
-  WHEN("constructing a default UDP server") {
-    tools::TIMEOUT = 0;
-
-    udp::server server;
-
-    REQUIRE(!server.is_running());
-    set_poller(nullptr);
-  }
+  set_poller(nullptr);
 }
 
 //

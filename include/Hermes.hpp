@@ -1388,9 +1388,6 @@ class client {
 
     send_requests_.pop();
 
-    if (send_requests_.empty())
-      poller_->wait_for_write<tcp::socket>(socket_, nullptr);
-
     if (!success) disconnect();
 
     if (callback) callback(success, result);
@@ -1417,9 +1414,6 @@ class client {
     }
 
     receive_requests_.pop();
-
-    if (receive_requests_.empty())
-      poller_->wait_for_read<tcp::socket>(socket_, nullptr);
 
     if (!success) disconnect();
 
@@ -1686,9 +1680,6 @@ class client {
     }
 
     send_requests_.pop();
-
-    if (send_requests_.empty())
-      poller_->wait_for_write<udp::socket>(socket_, nullptr);
 
     if (callback) callback(result);
   }
