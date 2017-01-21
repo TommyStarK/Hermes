@@ -3,7 +3,7 @@
 #ifdef _WIN32
 #include <WinSock2.h>
 #include <assert.h>
-#define UNUSED(x) __pragma(warning(suppress:4100)) x
+#define UNUSED(x) __pragma(warning(suppress : 4100)) x
 #else
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -241,8 +241,8 @@ class socket {
  public:
   //
   void bind(const std::string &host, unsigned int port) {
-	  UNUSED(host);
-	  UNUSED(port);
+    UNUSED(host);
+    UNUSED(port);
   }
 
   //
@@ -253,8 +253,8 @@ class socket {
 
   //
   void connect(const std::string &host, unsigned int port) {
-	  UNUSED(host);
-	  UNUSED(port);
+    UNUSED(host);
+    UNUSED(port);
   }
 
   //
@@ -264,14 +264,14 @@ class socket {
 
   //
   INT send(const std::vector<char> &data, INT size) {
-	  UNUSED(data);
-	  UNUSED(size);
+    UNUSED(data);
+    UNUSED(size);
     return 0;
   }
 
   std::vector<char> receive(INT size_to_read) {
-	  std::vector<char> buffer(size_to_read, 0);
-	  return buffer;
+    std::vector<char> buffer(size_to_read, 0);
+    return buffer;
   }
 
   //
@@ -603,9 +603,9 @@ class socket {
   //
   void init_datagram_socket(const std::string &host, unsigned int port,
                             bool broadcast_mode) {
-	  UNUSED(host);
-	  UNUSED(port);
-	  UNUSED(broadcast_mode);
+    UNUSED(host);
+    UNUSED(port);
+    UNUSED(broadcast_mode);
   }
 
   //
@@ -615,9 +615,9 @@ class socket {
 
   //
   INT sendto(const std::vector<char> &data, INT size) {
-	  UNUSED(data);
-	  UNUSED(size);
-	  return 0;
+    UNUSED(data);
+    UNUSED(size);
+    return 0;
   }
 
   //
@@ -627,20 +627,20 @@ class socket {
 
   //
   INT broadcast(const std::vector<char> &data, INT size) {
-	  UNUSED(data);
-	  UNUSED(size);
+    UNUSED(data);
+    UNUSED(size);
     return 0;
   }
 
   //
   void bind(const std::string &host, unsigned int port) {
-	  UNUSED(host);
-	  UNUSED(port);
+    UNUSED(host);
+    UNUSED(port);
   }
 
   //
   INT recvfrom(std::vector<char> &buffer) {
-	  UNUSED(buffer);
+    UNUSED(buffer);
     return 0;
   }
 
@@ -942,34 +942,34 @@ class poller {
   //
   template <typename T>
   bool has(const T &socket) {
-	  UNUSED(socket);
+    UNUSED(socket);
     return true;
   }
 
   //
   template <typename T>
   void add(const T &socket) {
-	  UNUSED(socket);
+    UNUSED(socket);
   }
 
   //
   template <typename T>
   void wait_for_read(const T &s, const std::function<void(void)> &c) {
-	  UNUSED(s);
-	  UNUSED(c);
+    UNUSED(s);
+    UNUSED(c);
   }
 
   //
   template <typename T>
   void wait_for_write(const T &s, const std::function<void(void)> &c) {
-	  UNUSED(s);
-	  UNUSED(c);
+    UNUSED(s);
+    UNUSED(c);
   }
 
   //
   template <typename T>
   void remove(const T &socket) {
-	  UNUSED(socket);
+    UNUSED(socket);
   }
 
  private:
@@ -1076,9 +1076,9 @@ class event {
 class poller {
  public:
   // Construct an empty polling model.
-  poller(void) : stop_(false), notification_pipe_{-1, -1} {
-    if (::pipe(notification_pipe_) == -1)
-      __RUNTIME_ERROR__("poller::poller: Error pipe() failed.");
+  poller(void) : stop_(false), socketpair_{-1, -1} {
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, socketpair_) == -1)
+      __RUNTIME_ERROR__("poller::poller: Error socketpair() failed.");
 
     poll_master_ = std::thread([this]() {
       while (!stop_) {
@@ -1100,13 +1100,13 @@ class poller {
   // Workers should stop working and the poll main thread is joined.
   ~poller(void) {
     stop_ = true;
-    notify_poll();
+    socketpair_write();
     poll_master_.join();
     workers_.stop();
-    // close the read end of the notification pipe.
-    ::close(notification_pipe_[0]);
-    // close the write end of the notification pipe.
-    ::close(notification_pipe_[1]);
+    // close one of the connected socketpair.
+    ::close(socketpair_[0]);
+    // close the other connected socketpair.
+    ::close(socketpair_[1]);
   }
 
  public:
@@ -1138,7 +1138,7 @@ class poller {
     new_event.on_receive_.callback = nullptr;
     new_event.on_send_.running = false;
     new_event.on_send_.callback = nullptr;
-    notify_poll();
+    socketpair_write();
   }
 
   // Set a read event to monitor on the given socket.
@@ -1156,7 +1156,7 @@ class poller {
     auto &specific_event = events_[s.get_fd()];
     specific_event.unwatch_ = false;
     specific_event.on_receive_.callback = c;
-    notify_poll();
+    socketpair_write();
   }
 
   // Set a write event to monitor on the given socket.
@@ -1175,7 +1175,7 @@ class poller {
     auto &specific_event = events_[s.get_fd()];
     specific_event.unwatch_ = false;
     specific_event.on_send_.callback = c;
-    notify_poll();
+    socketpair_write();
   }
 
   // Stop monitoring the given socket.
@@ -1199,18 +1199,18 @@ class poller {
       auto iterator = events_.find(socket.get_fd());
       events_.erase(iterator);
     }
-    notify_poll();
+    socketpair_write();
   }
 
  private:
-  // Force poll to wake up by writting on the file descriptor which refers to
-  // the write end of the pipe.
-  void notify_poll(void) { (void)::write(notification_pipe_[1], "T", 1); }
+  // Force poll to wake up by writting a byte on the file descriptor which
+  // refers to the other connected socketpair.
+  void socketpair_write(void) { (void)::write(socketpair_[1], "H", 1); }
 
-  // Clear notification pipe by reading out data of the pipe.
-  void clear_notification_pipe(void) {
-    char buffer[1024];
-    (void)::read(notification_pipe_[0], buffer, 1024);
+  // Read data out of the other connected socketpair.
+  void socketpair_read(void) {
+    char buffer[tools::BUFFER_SIZE];
+    (void)::read(socketpair_[0], buffer, tools::BUFFER_SIZE);
   }
 
   // Synchronize the differents events monitored by the poller. Fill the vector
@@ -1227,7 +1227,7 @@ class poller {
         event.second.reset_poll_struct();
       }
     }
-    poll_structs_.push_back({notification_pipe_[0], POLLIN, 0});
+    poll_structs_.push_back({socketpair_[0], POLLIN, 0});
   }
 
   // Handles a specific detected event for a given file descriptor by adding
@@ -1273,8 +1273,8 @@ class poller {
     std::unique_lock<std::mutex> lock(mutex_events_);
 
     for (const auto &result : poll_structs_) {
-      if (result.fd == notification_pipe_[0] && result.revents & POLLIN) {
-        clear_notification_pipe();
+      if (result.fd == socketpair_[0] && result.revents & POLLIN) {
+        socketpair_read();
         continue;
       }
 
@@ -1299,14 +1299,14 @@ class poller {
   // thread pool to execute callbacks.
   tools::workers workers_;
 
-  // Main thread.
+  // Main thread performing the poll.
   std::thread poll_master_;
 
   // Mutex to synchronize the events monitored.
   std::mutex mutex_events_;
 
-  // Unidirectional data channel used to notify poll to start polling.
-  int notification_pipe_[2];
+  // Unamed pair of connected socket used to wake up the poll thread.
+  int socketpair_[2];
 
   // A map containing:
   // @key: file descriptor
