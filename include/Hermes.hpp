@@ -1,9 +1,7 @@
 #pragma once
 
 #ifdef _WIN32
-#include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <WinSock2.h>
 #else
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -254,7 +252,7 @@ class socket {
   //
   void connect(const std::string &host, unsigned int port) {
     [[gnu::unused]] host;
-    [[gnu::unused]]
+	[[gnu::unused]] port;
   }
 
   //
@@ -284,7 +282,7 @@ class socket {
   SOCKET fd_;
 
   //
-  std::string host;
+  std::string host_;
 
   //
   unsigned int port_;
@@ -654,7 +652,7 @@ class socket {
   SOCKET fd_;
 
   //
-  std::string host;
+  std::string host_;
 
   //
   unsigned int port_;
@@ -1601,7 +1599,7 @@ class server {
           "std::shared_ptr<client> &> &callback) before running the server.");
 
     socket_.bind(host, port);
-    socket_.listen();
+    socket_.listen(tools::BACKLOG);
     poller_->add<tcp::socket>(socket_);
     poller_->wait_for_read<tcp::socket>(socket_,
                                         std::bind(&server::on_accept, this));
