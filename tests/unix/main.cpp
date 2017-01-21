@@ -426,3 +426,15 @@ SCENARIO("testing polling model features") {
     REQUIRE(poller->has<tcp::socket>(socket) == false);
   }
 }
+
+//
+// Tools tests section
+//
+using namespace hermes::tools;
+
+SCENARIO("testing tools report common errors") {
+  REQUIRE_THROWS(__LOGIC_ERROR__("logic error"));
+  REQUIRE_THROWS(__RUNTIME_ERROR__("runtime error"));
+  REQUIRE_THROWS(__INVALID_ARG__("invalid argument"));
+  REQUIRE_NOTHROW(__DISPLAY_ERROR__("displaying error functional"));
+}
