@@ -208,16 +208,84 @@ namespace tcp {
 // Provides synchronous tream-oriented socket functionality.
 class socket {
  public:
-  socket(void) {}
+  socket(void) : fd_(-1), host_(""), port_(0) {}
+
+  socket(SOCKET fd, const std::string &host, unsigned int port)
+      : fd_(fd), host_(host), port_(port) {}
+
+  socket(socket &&socket) : fd_(std::move(socket.get_fd())) {}
+
+  socket(const socket &) = delete;
+
+  socket &operator=(const socket &) = delete;
+
+  bool operator==(const socket &socket) const { return fd_ == socket.get_fd(); }
+
   ~socket(void) = default;
 
  public:
   //
   SOCKET get_fd(void) const { return fd_; }
 
+  //
+  const std::string &get_host(void) const { return ""; }
+
+  //
+  unsigned int get_port(void) const { return 0; }
+
+  //
+  bool is_socket_bound(void) const { return false; }
+
+ public:
+  //
+  void bind(const std::string &host, unsigned int port) {
+    [[gnu::unused]] host;
+    [[gnu::unused]] port;
+  }
+
+  //
+  void listen(unsigned int backlog) { [[gnu::unused]] backlog; }
+
+  //
+  tcp::socket accept(void) { return {0, "", 0}; }
+
+  //
+  void connect(const std::string &host, unsigned int port) {
+    [[gnu::unused]] host;
+    [[gnu::unused]]
+  }
+
+  //
+  INT send(const std::string &data) {
+    return send(std::vector<char>(data.begin(), data.end()), data.size());
+  }
+
+  //
+  INT send(const std::vector<char> &data, INT size) {
+    [[gnu::unused]] data;
+    [[gnu::unused]] size;
+    return 0;
+  }
+
+  std::vector<char> receive(INT size_to_read) {
+    std::vector<char> buffer;
+
+    [[gnu::unused]] size_to_read;
+    return buffer;
+  }
+
+  //
+  void close(void) {}
+
  private:
   //
   SOCKET fd_;
+
+  //
+  std::string host;
+
+  //
+  unsigned int port_;
 };
 
 #else
@@ -505,16 +573,89 @@ namespace udp {
 // Provides synchronous datagram-oriented socket functionality.
 class socket {
  public:
-  socket(void) {}
+  socket(void) : fd_(-1), host_(""), port_(0) {}
+
+  socket(SOCKET fd, const std::string &host, unsigned int port)
+      : fd_(fd), host_(host), port_(port) {}
+
+  socket(const socket &) = delete;
+
+  socket &operator=(const socket &) = delete;
+
+  bool operator==(const socket &socket) const { return fd_ == socket.get_fd(); }
+
   ~socket(void) = default;
 
  public:
-  // Returns the file descriptor associated to the socket.
+  //
   SOCKET get_fd(void) const { return fd_; }
 
+  //
+  const std::string &get_host(void) const { return ""; }
+
+  //
+  unsigned int get_port(void) const { return 0; }
+
+  //
+  bool is_socket_bound(void) const { return false; }
+
+ public:
+  //
+  void init_datagram_socket(const std::string &host, unsigned int port,
+                            bool broadcast_mode) {
+    [[gnu::unused]] host;
+    [[gnu::unused]] port;
+    [[gnu::unused]] broadcast_mode;
+  }
+
+  //
+  INT sendto(const std::string &data) {
+    return sendto(std::vector<char>(data.begin(), data.end()), data.size());
+  }
+
+  //
+  INT sendto(const std::vector<char> &data, INT size) {
+    [[gnu::unused]] data;
+    [[gnu::unused]] size;
+    return 0;
+  }
+
+  //
+  INT broadcast(const std::string &data) {
+    return broadcast(std::vector<char>(data.begin(), data.end()), data.size());
+  }
+
+  //
+  INT broadcast(const std::vector<char> &data, INT size) {
+    [[gnu::unused]] data;
+    [[gnu::unused]] size;
+    return 0;
+  }
+
+  //
+  void bind(const std::string &host, unsigned int port) {
+    [[gnu::unused]] host;
+    [[gnu::unused]] port;
+  }
+
+  //
+  INT recvfrom(std::vector<char> &buffer) {
+    [[gnu::unused]] buffer;
+    return 0;
+  }
+
+  //
+  void close(void) {}
+
  private:
-  // File descriptor associated to the socket.
+  //
   SOCKET fd_;
+
+  //
+  std::string host;
+
+  //
+  unsigned int port_;
 };
 
 #else
@@ -796,6 +937,40 @@ class poller {
  public:
   poller(void) {}
   ~poller(void) {}
+
+ public:
+  //
+  template <typename T>
+  bool has(const T &socket) {
+    [[gnu::unused]] socket;
+    return true;
+  }
+
+  //
+  template <typename T>
+  void add(const T &socket) {
+    [[gnu::unused]] socket;
+  }
+
+  //
+  template <typename T>
+  void wait_for_read(const T &s, const std::function<void(void)> &c) {
+    [[gnu::unused]] s;
+    [[gnu::unused]] c;
+  }
+
+  //
+  template <typename T>
+  void wait_for_write(const T &s, const std::function<void(void)> &c) {
+    [[gnu::unused]] s;
+    [[gnu::unused]] c;
+  }
+
+  //
+  template <typename T>
+  void remove(const T &socket) {
+    [[gnu::unused]] socket;
+  }
 
  private:
   // A map containing:

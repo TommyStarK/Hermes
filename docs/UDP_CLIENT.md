@@ -93,7 +93,6 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
 
   using namespace hermes::network::udp;
 
-
   int main(int ac, char **av) {
     client client;
 
@@ -111,7 +110,7 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
     client.async_broadcast("Hello world!\n", [](int bytes_sent) {
     	std::cout << "Number of bytes sent: " << bytes_sent << std::endl;
     });
-    
+
     // The calling thread will block until the specified signal is caught
     // @param: int signal_number.
     //
