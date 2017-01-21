@@ -91,27 +91,30 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
 ```cpp
   #include "Hermes.hpp"
 
-
   using namespace hermes::network::udp;
-
 
 
   int main(int ac, char **av) {
     client client;
 
 
+    // check if an host has been provided as argument.
     if (ac != 2) {
        std::cerr << "[Usage]: ./binary_name host.\n";
        return 1;
     }
 
+    // Initialize a client with broadcasting mode enabled.
     client.init(av[1], 27017, true);
 
-    client.async_send("Hello world!\n", [](int bytes_sent) {
+    // Asynchronous broadcast of data.
+    client.async_broadcast("Hello world!\n", [](int bytes_sent) {
     	std::cout << "Number of bytes sent: " << bytes_sent << std::endl;
     });
     
-
+    // The calling thread will block until the specified signal is caught
+    // @param: int signal_number.
+    //
     hermes::tools::wait_for_signal(SIGINT);
 
     return 0;
