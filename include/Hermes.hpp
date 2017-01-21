@@ -81,16 +81,20 @@ void wait_for_signal(int signal_number) {
 // @param:
 //    - the string to format.
 //
-std::string format_error(const std::string &msg) {
+std::string format_error(const std::string &msg, int line) {
   return std::string("[hermes ") + std::string(__FILE__) + std::string(":") +
-         std::to_string(__LINE__) + std::string("]\n") + msg;
+         std::to_string(line) + std::string("]\n") + msg;
 }
 
 // Various defines to report common errors.
-#define __LOGIC_ERROR__(error) throw std::logic_error(format_error(error));
-#define __RUNTIME_ERROR__(error) throw std::runtime_error(format_error(error));
-#define __INVALID_ARG__(error) throw std::invalid_argument(format_error(error));
-#define __DISPLAY_ERROR__(error) std::cerr << format_error(error) << std::endl;
+#define __LOGIC_ERROR__(error, line) \
+  throw std::logic_error(format_error(error, line));
+#define __RUNTIME_ERROR__(error, line) \
+  throw std::runtime_error(format_error(error, line));
+#define __INVALID_ARG__(error, line) \
+  throw std::invalid_argument(format_error(error, line));
+#define __DISPLAY_ERROR__(error, line) \
+  std::cerr << format_error(error, line) << std::endl;
 
 // A thread pool waiting for jobs for concurrent execution.
 // Jobs are enqueued in a synchronized queue. Each worker (thread) is waiting
@@ -106,7 +110,8 @@ class workers {
     if (workers_nbr > std::thread::hardware_concurrency())
       __LOGIC_ERROR__(
           "tools::workers::constructor: Number of workers is greater than the"
-          " number of concurrent threads supported by the system.");
+          " number of concurrent threads supported by the system.",
+          __LINE__);
 
     // We start the workers.
     for (unsigned int i = 0; i < workers_nbr; ++i)
@@ -143,8 +148,9 @@ class workers {
   void enqueue_job(const std::function<void(void)> &new_job) {
     if (!new_job)
       __LOGIC_ERROR__(
-          "tools::workers::enqueue_job: Passing nullptr instead of const "
-          "std::function<void(void)> &.");
+          "tools::workers::enqueue_job: Passing nullptr instead of a reference "
+          "on a const function object of type std::function<void(void)>.",
+          __LINE__);
 
     std::unique_lock<std::mutex> lock(mutex_job_queue_);
     job_queue_.push(new_job);
@@ -352,16 +358,17 @@ class socket {
   void bind(const std::string &host, unsigned int port) {
     if (is_socket_bound_)
       __LOGIC_ERROR__("tcp::socket::bind: Socket is  already bound to" + host_ +
-                      ":" + std::to_string(port_));
+                          ":" + std::to_string(port_),
+                      __LINE__);
 
     create_socket(host, port);
 
     int yes = 1;
     if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
-      __RUNTIME_ERROR__("tcp::socket::bind: setsockopt() failed.");
+      __RUNTIME_ERROR__("tcp::socket::bind: setsockopt() failed.", __LINE__);
 
     if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1)
-      __RUNTIME_ERROR__("tcp::socket::bind: bind() failed.");
+      __RUNTIME_ERROR__("tcp::socket::bind: bind() failed.", __LINE__);
     is_socket_bound_ = true;
   }
 
@@ -373,17 +380,19 @@ class socket {
     if (!is_socket_bound_)
       __LOGIC_ERROR__(
           "tcp::socket::listen: Socket must be bound before listening for "
-          "incoming connections.");
+          "incoming connections.",
+          __LINE__);
 
     if (backlog > SOMAXCONN)
       __DISPLAY_ERROR__(
           "tcp::socket::listen: Param backlog greater than "
           "SOMAXCONN.\nPlease "
           "refer to the value in /proc/sys/net/core/somaxconn. Param backlog "
-          "will be truncated.");
+          "will be truncated.",
+          __LINE__);
 
     if (::listen(fd_, backlog) == -1)
-      __RUNTIME_ERROR__("tcp::socket::listen: listen() failed.");
+      __RUNTIME_ERROR__("tcp::socket::listen: listen() failed.", __LINE__);
   }
 
   // Accept a new connection.
@@ -397,13 +406,13 @@ class socket {
     int new_fd = ::accept(fd_, (struct sockaddr *)&client, &size);
 
     if (new_fd == -1)
-      __RUNTIME_ERROR__("tcp::socket::accpet: accept() failed.");
+      __RUNTIME_ERROR__("tcp::socket::accpet: accept() failed.", __LINE__);
 
     int res = getnameinfo((struct sockaddr *)&client, size, host, sizeof(host),
                           port, sizeof(port), NI_NUMERICHOST | NI_NUMERICSERV);
 
     if (res != 0)
-      __RUNTIME_ERROR__("tcp::socket::accept: getnameinfo() failed.");
+      __RUNTIME_ERROR__("tcp::socket::accept: getnameinfo() failed.", __LINE__);
 
     return {new_fd, std::string(host), (unsigned int)std::stoi(port)};
   }
@@ -422,13 +431,15 @@ class socket {
     if (is_socket_bound_)
       __LOGIC_ERROR__(
           "tcp::socket::connect: Trying to connect a socket bound on port: " +
-          std::to_string(port_) +
-          ". Invalid operation for a socket planned for a server application.");
+              std::to_string(port_) +
+              ". Invalid operation for a socket planned for a server "
+              "application.",
+          __LINE__);
 
     create_socket(host, port);
 
     if (::connect(fd_, info_.ai_addr, info_.ai_addrlen) == -1)
-      __RUNTIME_ERROR__("tcp::socket::connect: connect() failed.");
+      __RUNTIME_ERROR__("tcp::socket::connect: connect() failed.", __LINE__);
   }
 
   // Send data.
@@ -451,11 +462,13 @@ class socket {
     if (fd_ == -1)
       __LOGIC_ERROR__(
           "tcp::socket::send: Invalid operation. Trying to send data on a non "
-          "connected socket.");
+          "connected socket.",
+          __LINE__);
 
     int res = ::send(fd_, message.data(), message_len, 0);
 
-    if (res == -1) __RUNTIME_ERROR__("tcp::socket::send: send() failed.");
+    if (res == -1)
+      __RUNTIME_ERROR__("tcp::socket::send: send() failed.", __LINE__);
 
     return res;
   }
@@ -469,7 +482,8 @@ class socket {
     if (fd_ == -1)
       __LOGIC_ERROR__(
           "tcp::socket::send: Invalid operation. Trying to receive data on a "
-          "non connected socket.");
+          "non connected socket.",
+          __LINE__);
 
     std::vector<char> buffer(size_to_read, 0);
 
@@ -478,7 +492,7 @@ class socket {
 
     switch (bytes_read) {
       case -1:
-        __RUNTIME_ERROR__("tcp::socket::receive: recv() failed.");
+        __RUNTIME_ERROR__("tcp::socket::receive: recv() failed.", __LINE__);
         break;
       case 0:
         std::cout << "Connection closed.\n";
@@ -499,7 +513,7 @@ class socket {
   void close(void) {
     if (fd_ != -1) {
       if (::close(fd_) == -1)
-        __RUNTIME_ERROR__("tcp::socket::close: close() failed.");
+        __RUNTIME_ERROR__("tcp::socket::close: close() failed.", __LINE__);
     }
 
     fd_ = -1;
@@ -527,7 +541,8 @@ class socket {
 
     if ((status = ::getaddrinfo(host_.c_str(), std::to_string(port_).c_str(),
                                 &hints, &addr_infos)) != 0)
-      __RUNTIME_ERROR__("tcp::socket::get_addr_info: getaddrinfo() failed.");
+      __RUNTIME_ERROR__("tcp::socket::get_addr_info: getaddrinfo() failed.",
+                        __LINE__);
 
     for (auto p = addr_infos; p != NULL; p = p->ai_next) {
       if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
@@ -540,7 +555,8 @@ class socket {
 
     if (fd_ == -1) {
       if (addr_infos) ::freeaddrinfo(addr_infos);
-      __RUNTIME_ERROR__("tcp::socket::create_socket: socket() failed.");
+      __RUNTIME_ERROR__("tcp::socket::create_socket: socket() failed.",
+                        __LINE__);
     }
   }
 
@@ -721,12 +737,14 @@ class socket {
     if (fd_ == -1)
       __LOGIC_ERROR__(
           "udp::socket::sendto: You need to create a valid datagram socket "
-          "before sending data.");
+          "before sending data.",
+          __LINE__);
 
     int res =
         ::sendto(fd_, data.data(), size, 0, info_.ai_addr, info_.ai_addrlen);
 
-    if (res == -1) __RUNTIME_ERROR__("udp::socket::sendto: sendto() failed.");
+    if (res == -1)
+      __RUNTIME_ERROR__("udp::socket::sendto: sendto() failed.", __LINE__);
 
     return res;
   }
@@ -749,14 +767,15 @@ class socket {
     if (fd_ == -1)
       __LOGIC_ERROR__(
           "udp::socket::broadcast: You need to create a valid data socket "
-          "before broadcasting data.");
+          "before broadcasting data.",
+          __LINE__);
 
     int res =
         ::sendto(fd_, data.data(), size, 0, (struct sockaddr *)&broadcast_info_,
                  sizeof(broadcast_info_));
 
     if (res == -1)
-      __RUNTIME_ERROR__("udp::socket::broadcast: sendto() failed.");
+      __RUNTIME_ERROR__("udp::socket::broadcast: sendto() failed.", __LINE__);
 
     return res;
   }
@@ -774,12 +793,13 @@ class socket {
   void bind(const std::string &host, unsigned int port) {
     if (is_socket_bound_)
       __LOGIC_ERROR__("udp::socket::bind: Socket is  already bound to" + host_ +
-                      ":" + std::to_string(port_));
+                          ":" + std::to_string(port_),
+                      __LINE__);
 
     create_socket(host, port);
 
     if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1)
-      __RUNTIME_ERROR__("udp::socket::bind: bind() failed.");
+      __RUNTIME_ERROR__("udp::socket::bind: bind() failed.", __LINE__);
     is_socket_bound_ = true;
   }
 
@@ -792,7 +812,8 @@ class socket {
     if (!is_socket_bound_)
       __LOGIC_ERROR__(
           "udp::socket::recvfrom: You need to bind a valid datagram socket "
-          "before receiving data.");
+          "before receiving data.",
+          __LINE__);
 
     socklen_t len;
     len = sizeof(source_info_);
@@ -800,7 +821,7 @@ class socket {
                          (struct sockaddr *)&source_info_, &len);
 
     if (res == -1)
-      __RUNTIME_ERROR__("udp::socket::recvfrom: recvfrom() failed.");
+      __RUNTIME_ERROR__("udp::socket::recvfrom: recvfrom() failed.", __LINE__);
 
     return res;
   }
@@ -813,7 +834,7 @@ class socket {
   void close(void) {
     if (fd_ != -1) {
       if (::close(fd_) == -1)
-        __RUNTIME_ERROR__("tcp::socket::close: close() failed.");
+        __RUNTIME_ERROR__("tcp::socket::close: close() failed.", __LINE__);
     }
 
     fd_ = -1;
@@ -845,7 +866,8 @@ class socket {
     if ((status = ::getaddrinfo(!host_.compare("") ? NULL : host_.c_str(),
                                 std::to_string(port_).c_str(), &hints,
                                 &addr_infos)) != 0) {
-      __RUNTIME_ERROR__("udp::socket::get_addr_info: getaddrinfo() failed.");
+      __RUNTIME_ERROR__("udp::socket::get_addr_info: getaddrinfo() failed.",
+                        __LINE__);
     }
 
     for (auto p = addr_infos; p != NULL; p = p->ai_next) {
@@ -861,7 +883,8 @@ class socket {
 
     if (fd_ == -1) {
       if (addr_infos) ::freeaddrinfo(addr_infos);
-      __RUNTIME_ERROR__("udp::socket::create_socket: socket() failed.");
+      __RUNTIME_ERROR__("udp::socket::create_socket: socket() failed.",
+                        __LINE__);
     }
   }
 
@@ -881,13 +904,15 @@ class socket {
 
     if ((hostent = ::gethostbyname(host_.c_str())) == NULL)
       __RUNTIME_ERROR__(
-          "udp::socket::create_broadcaster: gethostbyname() failed.");
+          "udp::socket::create_broadcaster: gethostbyname() failed.", __LINE__);
 
     if ((fd_ = ::socket(AF_INET, SOCK_DGRAM, 0)) == -1)
-      __RUNTIME_ERROR__("udp::socket::create_broadcaster: socket() failed.");
+      __RUNTIME_ERROR__("udp::socket::create_broadcaster: socket() failed.",
+                        __LINE__);
 
     if (::setsockopt(fd_, SOL_SOCKET, SO_BROADCAST, &b, sizeof(b)) == -1)
-      __RUNTIME_ERROR__("udp::socket::create_broadcaster: setsockopt() failed");
+      __RUNTIME_ERROR__("udp::socket::create_broadcaster: setsockopt() failed",
+                        __LINE__);
 
     broadcast_info_.sin_family = AF_INET;
     broadcast_info_.sin_port = ::htons(port_);
@@ -1078,7 +1103,7 @@ class poller {
   // Construct an empty polling model.
   poller(void) : stop_(false), socketpair_{-1, -1} {
     if (::socketpair(AF_UNIX, SOCK_STREAM, 0, socketpair_) == -1)
-      __RUNTIME_ERROR__("poller::poller: Error socketpair() failed.");
+      __RUNTIME_ERROR__("poller::poller: Error socketpair() failed.", __LINE__);
 
     poll_master_ = std::thread([this]() {
       while (!stop_) {
@@ -1382,7 +1407,7 @@ class client {
       result = socket_.send(buffer, buffer.size());
       success = true;
     } catch (const std::exception &e) {
-      __DISPLAY_ERROR__(e.what());
+      __DISPLAY_ERROR__(e.what(), __LINE__);
       success = false;
     }
 
@@ -1409,7 +1434,7 @@ class client {
       result = socket_.receive(size_to_read);
       success = true;
     } catch (const std::exception &e) {
-      __DISPLAY_ERROR__(e.what());
+      __DISPLAY_ERROR__(e.what(), __LINE__);
       success = false;
     }
 
@@ -1429,7 +1454,8 @@ class client {
   //
   void connect(const std::string &host, unsigned int port) {
     if (connected_)
-      __LOGIC_ERROR__("tcp::client::connect: The client is already connected.");
+      __LOGIC_ERROR__("tcp::client::connect: The client is already connected.",
+                      __LINE__);
     socket_.connect(host, port);
     poller_->add<tcp::socket>(socket_);
     connected_ = true;
@@ -1459,7 +1485,8 @@ class client {
     if (!connected_)
       __LOGIC_ERROR__(
           "tcp::client::async_send: You must connect the client before trying "
-          "to send data.");
+          "to send data.",
+          __LINE__);
 
     std::unique_lock<std::mutex> lock(send_requests_mutex_);
 
@@ -1470,7 +1497,8 @@ class client {
     } else {
       __DISPLAY_ERROR__(
           "tcp::client::async_send: You must provide a callback in order to "
-          "perform an asynchronous send of data.");
+          "perform an asynchronous send of data.",
+          __LINE__);
     }
   }
 
@@ -1485,7 +1513,8 @@ class client {
     if (!connected_)
       __LOGIC_ERROR__(
           "tcp::client::async_receive: You must connect the client before "
-          "trying to receive data.");
+          "trying to receive data.",
+          __LINE__);
 
     std::unique_lock<std::mutex> lock(receive_requests_mutex_);
 
@@ -1496,7 +1525,8 @@ class client {
     } else {
       __DISPLAY_ERROR__(
           "tcp::client::async_send: You must provide a callback in order to "
-          "perform an asynchronous receive of data.");
+          "perform an asynchronous receive of data.",
+          __LINE__);
     }
   }
 
@@ -1584,13 +1614,14 @@ class server {
   //
   void run(const std::string &host, unsigned int port) {
     if (running_)
-      __LOGIC_ERROR__("tcp::server::run: Server is already running.");
+      __LOGIC_ERROR__("tcp::server::run: Server is already running.", __LINE__);
 
     if (!callback_)
       __LOGIC_ERROR__(
           "tcp::server::run: You must provide a callback for a new "
           "connection.\n Use method on_connection(const std::function<const "
-          "std::shared_ptr<client> &> &callback) before running the server.");
+          "std::shared_ptr<client> &> &callback) before running the server.",
+          __LINE__);
 
     socket_.bind(host, port);
     socket_.listen(tools::BACKLOG);
@@ -1676,7 +1707,7 @@ class client {
       else
         result = socket_.sendto(buffer, buffer.size());
     } catch (const std::exception &e) {
-      __DISPLAY_ERROR__(e.what());
+      __DISPLAY_ERROR__(e.what(), __LINE__);
     }
 
     send_requests_.pop();
@@ -1721,7 +1752,8 @@ class client {
     if (broadcast_mode_)
       __LOGIC_ERROR__(
           "udp::client::async_send: Broadcast mode enabled. Use "
-          "'async_broadcast' instead of 'async_send'.");
+          "'async_broadcast' instead of 'async_send'.",
+          __LINE__);
 
     std::unique_lock<std::mutex> lock(mutex_);
 
@@ -1732,7 +1764,8 @@ class client {
     } else {
       __DISPLAY_ERROR__(
           "udp::client::async_send: You must provide a callback in order to "
-          "perform an asynchronous send of data.");
+          "perform an asynchronous send of data.",
+          __LINE__);
     }
   }
 
@@ -1760,7 +1793,8 @@ class client {
     if (!broadcast_mode_)
       __LOGIC_ERROR__(
           "udp::client::async_broadcast: Broadcast mode not enabled. Use "
-          "'async_send' instead of 'async_broadcast'.");
+          "'async_send' instead of 'async_broadcast'.",
+          __LINE__);
 
     std::unique_lock<std::mutex> lock(mutex_);
 
@@ -1771,7 +1805,8 @@ class client {
     } else {
       __DISPLAY_ERROR__(
           "udp::client::async_send: You must provide a callback in order to "
-          "perform an asynchronous send of data.");
+          "perform an asynchronous send of data.",
+          __LINE__);
     }
   }
 
@@ -1835,7 +1870,7 @@ class server {
     try {
       result = socket_.recvfrom(buffer);
     } catch (const std::exception &e) {
-      __DISPLAY_ERROR__(e.what());
+      __DISPLAY_ERROR__(e.what(), __LINE__);
     }
 
     if (callback_) {
@@ -1855,7 +1890,8 @@ class server {
   void bind(const std::string &host, unsigned int port) {
     if (bound_)
       __LOGIC_ERROR__("udp::server::bind: Server is already bound to" + host +
-                      ":" + std::to_string(port) + ".");
+                          ":" + std::to_string(port) + ".",
+                      __LINE__);
 
     socket_.bind(host, port);
     poller_->add<udp::socket>(socket_);
@@ -1873,14 +1909,16 @@ class server {
     if (!bound_)
       __LOGIC_ERROR__(
           "udp::socket::async_recvfrom: You need to bind the server on a "
-          "host/port before using it.");
+          "host/port before using it.",
+          __LINE__);
 
     if (callback) {
       callback_ = callback;
     } else {
       __DISPLAY_ERROR__(
           "udp::client::async_recvfrom: You must provide a callback in order "
-          "to perform an asynchronous receive of data.");
+          "to perform an asynchronous receive of data.",
+          __LINE__);
     }
   }
 

@@ -62,6 +62,7 @@ SCENARIO("testing TCP socket: server operations") {
       REQUIRE_THROWS(default_socket.listen(30));
       REQUIRE_NOTHROW(socket_for_test.bind("127.0.0.1", 27017));
       REQUIRE_NOTHROW(socket_for_test.listen());
+      REQUIRE_THROWS(socket_for_test.connect("127.0.0.1", 27017));
       REQUIRE_NOTHROW(socket_for_test.close());
     }
 
@@ -106,6 +107,7 @@ SCENARIO("testing TCP socket: client operations") {
       std::this_thread::sleep_for(std::chrono::seconds(1));
 
       std::thread client([&socket_for_test]() {
+        REQUIRE_THROWS(socket_for_test.connect("éze5r4", 27017));
         REQUIRE_NOTHROW(socket_for_test.connect("127.0.0.1", 27017));
         REQUIRE_NOTHROW(socket_for_test.close());
       });
@@ -158,12 +160,13 @@ SCENARIO("testing TCP server and client operations") {
       std::thread s([&server]() {
         server.on_connection([](const std::shared_ptr<tcp::client>& client) {
           client->async_receive(1024, [](bool success, std::vector<char> data) {
-            if (success) REQUIRE(!data.empty());
+            if (success) std::cout << data.data();
           });
         });
 
         REQUIRE_NOTHROW(server.run("127.0.0.1", 27017));
         std::this_thread::sleep_for(std::chrono::seconds(1));
+        REQUIRE_THROWS(server.run("127.0.0.1", 27017));
       });
 
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -174,6 +177,7 @@ SCENARIO("testing TCP server and client operations") {
                           [](bool success, std::size_t bytes_sent) {
                             if (success) REQUIRE(bytes_sent == 13);
                           });
+        REQUIRE_THROWS(client.connect("127.0.0.1", 27017));
       });
 
       REQUIRE_NOTHROW(s.join());
@@ -247,6 +251,7 @@ SCENARIO("testing UDP socket: server operations") {
     udp::socket socket2;
 
     WHEN("creating and binding a datagram socket on a given host/port") {
+      REQUIRE_THROWS(socket2.bind("é4r4", 27017));
       REQUIRE_NOTHROW(socket1.bind("", 27017));
 
       THEN(
@@ -321,10 +326,12 @@ SCENARIO("testing UDP server and client operations") {
 
         server.async_recvfrom([](std::vector<char> buffer, int bytes_received) {
           REQUIRE(bytes_received == 13);
-          std::cout << buffer.data();
+          (void)buffer;
         });
 
         std::this_thread::sleep_for(std::chrono::seconds(1));
+        REQUIRE_THROWS(server.bind("", 27017));
+        REQUIRE_NOTHROW(server.async_recvfrom(nullptr));
       });
 
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -333,6 +340,9 @@ SCENARIO("testing UDP server and client operations") {
         REQUIRE_NOTHROW(client.init("127.0.0.1", 27017, false));
         client.async_send("Hello world!\n",
                           [](int bytes_sent) { REQUIRE(bytes_sent == 13); });
+
+        REQUIRE_NOTHROW(client.async_send("toto", nullptr));
+        REQUIRE_THROWS(client.async_broadcast("toto", nullptr));
       });
 
       REQUIRE_NOTHROW(s.join());
@@ -425,16 +435,4 @@ SCENARIO("testing polling model features") {
     poller->remove<tcp::socket>(socket);
     REQUIRE(poller->has<tcp::socket>(socket) == false);
   }
-}
-
-//
-// Tools tests section
-//
-using namespace hermes::tools;
-
-SCENARIO("testing tools report common errors") {
-  REQUIRE_THROWS(__LOGIC_ERROR__("logic error"));
-  REQUIRE_THROWS(__RUNTIME_ERROR__("runtime error"));
-  REQUIRE_THROWS(__INVALID_ARG__("invalid argument"));
-  REQUIRE_NOTHROW(__DISPLAY_ERROR__("displaying error functional"));
 }
