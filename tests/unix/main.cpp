@@ -121,7 +121,7 @@ SCENARIO("testing TCP socket: client operations") {
         REQUIRE_NOTHROW(default_socket.bind("127.0.0.1", 27017));
         REQUIRE_NOTHROW(default_socket.listen());
         auto client = std::make_shared<tcp::socket>(default_socket.accept());
-        std::vector<char> data = client->receive();
+        std::vector<char> data = client->receive(1024);
         std::string rcv(data.data());
         REQUIRE(rcv == "test ok :)");
         REQUIRE(rcv.size() == 10);
