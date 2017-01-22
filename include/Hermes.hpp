@@ -74,8 +74,10 @@ class basic {
 };
 
 //
-// Stores the value of errno.
-// Allows to format an error message to make it more readable.
+// When constructed, 'error' class stores the errno value and set it back at its
+// destruction. Otherwithe it allows to throw a specified 'type' of error and
+// provide a clear format for the error messages.
+//
 //
 class error final : basic {
  public:
@@ -83,17 +85,44 @@ class error final : basic {
 
   ~error() { errno = errno_; }
 
+  enum type { NONE = 0, ARGS = 1, LOGIC = 2, RUNTIME = 3 };
+
   int get_error(void) const { return errno_; }
 
-  // format the
-  static std::string format(const std::string &msg, int line) {
-    return std::string("[hermes ") + std::string(__FILE__) + std::string(":") +
-           std::to_string(line) + std::string("]\n") + msg;
+  // format the error message displayed.
+  static std::string format(const std::string &in, int line,
+                            const std::string &message) {
+    return std::string(__FILE__) + std::string(": ") + in + std::string("\n") +
+           std::string(__FILE__) + std::string(":") + std::to_string(line) +
+           std::string(" ") + message + std::string("\n");
+  }
+
+  static void require_throws(type type, const std::string &in, int line,
+                             const std::string &message) {
+    switch (type) {
+      case ARGS:
+        throw std::invalid_argument(format(in, line, message));
+        break;
+      case LOGIC:
+        throw std::logic_error(format(in, line, message));
+        break;
+      case RUNTIME:
+        throw std::runtime_error(format(in, line, message));
+        break;
+      default:
+        break;
+    }
   }
 
  private:
   int errno_ = 0;
 };
+
+#define HERMES_THROW(type, in, line, message)       \
+  {                                                 \
+    std::cerr << message << std::endl;              \
+    error::require_throws(type, in, line, message); \
+  }
 
 //
 // The defer class allows you to designate specified functions to be executed
@@ -162,11 +191,15 @@ class workers final : basic {
  public:
   explicit workers(unsigned int workers_nbr = THREADS_NBR) : stop_(false) {
     // Check the number of concurrent threads supported by the system.
-    if (workers_nbr > std::thread::hardware_concurrency())
-      throw std::invalid_argument(error::format(
-          "tools::workers::workers: Number of workers is greater than the "
-          "number of concurrent threads supported by the system.",
-          __LINE__));
+    if (workers_nbr > std::thread::hardware_concurrency()) {
+      HERMES_THROW(
+          error::ARGS,
+          " In the constructor explicit "
+          "hermes::tools::workers::workers(unsigned int):",
+          __LINE__,
+          " error: Number of workers is greater than the number of concurrent "
+          "threads supported by the system.");
+    }
 
     // We start the workers.
     for (unsigned int i = 0; i < workers_nbr; ++i)
@@ -197,11 +230,10 @@ class workers final : basic {
   //    - a reference on a const function object: The job to enqueue.
   //
   void enqueue_job(const std::function<void(void)> &new_job) {
-    if (!new_job)
-      throw std::invalid_argument(error::format(
-          "tools::workers::enqueue_job: Passing nullptr instead of a reference "
-          "on a const function object of type std::function<void(void)>.",
-          __LINE__));
+    if (!new_job) {
+      std::cout << "WARNING: Passing nullptr.\n";
+      return;
+    }
 
     std::unique_lock<std::mutex> lock(mutex_job_queue_);
     job_queue_.push(new_job);
@@ -399,22 +431,29 @@ class socket final : basic {
   //    - unsigned int port.
   //
   void bind(const std::string &host, unsigned int port) {
-    if (is_socket_bound_)
-      throw std::logic_error(
-          error::format("tcp::socket::bind: Socket is  already bound to" +
-                            host_ + ":" + std::to_string(port_),
-                        __LINE__));
+    if (is_socket_bound_) {
+      std::cout << "WARNING: Socket already bound\n";
+      return;
+    }
 
     create_socket(host, port);
 
     int yes = 1;
-    if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
-      throw std::runtime_error(
-          error::format("tcp::socket::bind: setsockopt() failed.", __LINE__));
+    if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In member function void "
+                   "hermes::network::tcp::socket::bind(const std::string &, "
+                   "unsigned int):",
+                   __LINE__, " error: setsockopt() failed.");
+    }
 
-    if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1)
-      throw std::runtime_error(
-          error::format("tcp::socket::bind: bind() failed.", __LINE__));
+    if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In member function void "
+                   "hermes::network::tcp::socket::bind(const std::string &, "
+                   "unsigned int)",
+                   __LINE__, " error: bind() failed.");
+    }
 
     is_socket_bound_ = true;
   }
@@ -423,25 +462,28 @@ class socket final : basic {
   //
   // @param: cf top of "Hermes.hpp"
   //
-  void listen(unsigned int backlog = tools::BACKLOG) {
-    if (!is_socket_bound_)
-      throw std::logic_error(
-          error::format("tcp::socket::listen: Socket must be bound before "
-                        "listening for incoming connections.",
-                        __LINE__));
+  void listen(unsigned int backlog = BACKLOG) {
+    if (!is_socket_bound_) {
+      HERMES_THROW(error::LOGIC,
+                   " In member function void "
+                   "hermes::network::tcp::socket::listen(unsigned int):",
+                   __LINE__,
+                   " Invalid operation: The socket must be bound before "
+                   "listening for incoming connections.");
+    }
 
-    if (backlog > SOMAXCONN)
-      std::cerr << error::format(
-                       "tcp::socket::listen: Param backlog greater than "
-                       "SOMAXCONN.\nPlease refer to the value in "
-                       "/proc/sys/net/core/somaxconn. Param backlog will be "
-                       "truncated.",
-                       __LINE__)
-                << std::endl;
+    if (backlog > SOMAXCONN) {
+      std::cout << "Param backlog greater than SOMAXCONN.\nPlease refer to the";
+      std::cout << " value in /proc/sys/net/core/somaxconn. Param backlog will";
+      std::cout << " be truncated.\n";
+    }
 
-    if (::listen(fd_, backlog) == -1)
-      throw std::runtime_error(
-          error::format("tcp::socket::listen: listen() failed.", __LINE__));
+    if (::listen(fd_, backlog) == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In member function void "
+                   "hermes::network::tcp::socket::listen(unsigned int)",
+                   __LINE__, " error: listen() failed.");
+    }
   }
 
   // Accept a new connection.
@@ -454,16 +496,22 @@ class socket final : basic {
     size = sizeof(client);
     int new_fd = ::accept(fd_, (struct sockaddr *)&client, &size);
 
-    if (new_fd == -1)
-      throw std::runtime_error(
-          error::format("tcp::socket::accpet: accept() failed.", __LINE__));
+    if (new_fd == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In member function tcp::socket "
+                   "hermes::network::tcp::socket::accept(void)",
+                   __LINE__, " error: accept() failed.");
+    }
 
     int res = getnameinfo((struct sockaddr *)&client, size, host, sizeof(host),
                           port, sizeof(port), NI_NUMERICHOST | NI_NUMERICSERV);
 
-    if (res != 0)
-      throw std::runtime_error(error::format(
-          "tcp::socket::accept: getnameinfo() failed.", __LINE__));
+    if (res != 0) {
+      HERMES_THROW(error::RUNTIME,
+                   " In member function tcp::socket "
+                   "hermes::network::tcp::socket::accept(void)",
+                   __LINE__, " error: getnameinfo() failed.");
+    }
 
     return {new_fd, std::string(host), (unsigned int)std::stoi(port)};
   }
@@ -479,18 +527,25 @@ class socket final : basic {
   //    - unsigned int port.
   //
   void connect(const std::string &host, unsigned int port) {
-    if (is_socket_bound_)
-      throw std::runtime_error(error::format(
-          "tcp::socket::connect: Trying to connect a socket bound on port: " +
-              std::to_string(port_) + ". Invalid operation for a socket "
-                                      "planned for a server application.",
-          __LINE__));
+    if (is_socket_bound_) {
+      HERMES_THROW(error::LOGIC,
+                   " In member function void "
+                   "hermes::network::tcp::socket::connect(const std::string &, "
+                   "unsigned int)",
+                   __LINE__,
+                   " Invalid operation: You cannot connect a socket which is "
+                   "already bound and planned for a server application.");
+    }
 
     create_socket(host, port);
 
-    if (::connect(fd_, info_.ai_addr, info_.ai_addrlen) == -1)
-      throw std::runtime_error(
-          error::format("tcp::socket::connect: connect() failed.", __LINE__));
+    if (::connect(fd_, info_.ai_addr, info_.ai_addrlen) == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In member function void "
+                   "hermes::network::tcp::socket::connect(const std::string &, "
+                   "unsigned int)",
+                   __LINE__, " error: connect() failed.");
+    }
   }
 
   // Send data.
@@ -510,17 +565,24 @@ class socket final : basic {
   //    - size: The size of the message.
   //
   std::size_t send(const std::vector<char> &message, std::size_t message_len) {
-    if (fd_ == -1)
-      throw std::runtime_error(
-          error::format("tcp::socket::send: Invalid operation. Trying to send "
-                        "data from a non connected socket.",
-                        __LINE__));
+    if (fd_ == -1) {
+      HERMES_THROW(error::LOGIC,
+                   " In member function std::size_t "
+                   "hermes::network::tcp::socket::send(const std::vector<char> "
+                   "&, std::size_t):",
+                   __LINE__,
+                   " Invalid operation: file descriptor equals to: -1");
+    }
 
     int res = ::send(fd_, message.data(), message_len, 0);
 
-    if (res == -1)
-      throw std::runtime_error(
-          error::format("tcp::socket::send: send() failed.", __LINE__));
+    if (res == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In member function std::size_t "
+                   "hermes::network::tcp::socket::send(const std::vector<char> "
+                   "&, std::size_t):",
+                   __LINE__, " error: send() failed.");
+    }
 
     return res;
   }
@@ -530,12 +592,14 @@ class socket final : basic {
   // @param:
   //    - size_t size to read.
   //
-  std::vector<char> receive(std::size_t size_to_read = tools::BUFFER_SIZE) {
-    if (fd_ == -1)
-      throw std::runtime_error(
-          error::format("tcp::socket::send: Invalid operation. Trying to "
-                        "receive data on a non connected socket.",
-                        __LINE__));
+  std::vector<char> receive(std::size_t size_to_read = BUFFER_SIZE) {
+    if (fd_ == -1) {
+      HERMES_THROW(error::LOGIC,
+                   " In member function std::vector<char> "
+                   "hermes::network::tcp::socket::send(std::size_t):",
+                   __LINE__,
+                   " Invalid operation: file descriptor equals to: -1.");
+    }
 
     std::vector<char> buffer(size_to_read, 0);
 
@@ -544,11 +608,13 @@ class socket final : basic {
 
     switch (bytes_read) {
       case -1:
-        throw std::runtime_error(
-            error::format("tcp::socket::receive: recv() failed.", __LINE__));
+        HERMES_THROW(error::RUNTIME,
+                     " In member function std::vector<char> "
+                     "hermes::network::tcp::socket::send(std::size_t):",
+                     __LINE__, " error: receive() failed.");
         break;
       case 0:
-        std::cout << "Connection closed.\n";
+        std::cout << "INFO: Connection closed by peer.\n";
         close();
         break;
       default:
@@ -565,9 +631,12 @@ class socket final : basic {
   // Close the file descriptor associated to the socket.
   void close(void) {
     if (fd_ != -1) {
-      if (::close(fd_) == -1)
-        throw std::runtime_error(
-            error::format("tcp::socket::close: close() failed.", __LINE__));
+      if (::close(fd_) == -1) {
+        HERMES_THROW(error::RUNTIME,
+                     " In member function void "
+                     "hermes::network::tcp::socket::close(void):",
+                     __LINE__, " error: close() failed.");
+      }
     }
     fd_ = -1;
     is_socket_bound_ = false;
@@ -593,9 +662,13 @@ class socket final : basic {
     hints.ai_socktype = SOCK_STREAM;
 
     if ((status = ::getaddrinfo(host_.c_str(), std::to_string(port_).c_str(),
-                                &hints, &addr_infos)) != 0)
-      throw std::runtime_error(
-          error::format("tcp::socket::close: close() failed.", __LINE__));
+                                &hints, &addr_infos)) != 0) {
+      HERMES_THROW(error::RUNTIME,
+                   " In private member function void "
+                   "hermes::network::tcp::socket::create_socket(const "
+                   "std::string &, unsigned int):",
+                   __LINE__, " error: getaddrinfo() failed.");
+    }
 
     for (auto p = addr_infos; p != NULL; p = p->ai_next) {
       if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
@@ -606,9 +679,13 @@ class socket final : basic {
       break;
     }
 
-    if (fd_ == -1)
-      throw std::runtime_error(error::format(
-          "tcp::socket::create_socket: socket() failed.", __LINE__));
+    if (fd_ == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In private member function void "
+                   "hermes::network::tcp::socket::create_socket(const "
+                   "std::string &, unsigned int):",
+                   __LINE__, " error: socket() failed.");
+    }
   }
 
  private:
@@ -777,18 +854,25 @@ class socket final : basic {
   //    - a reference on a const vector of char: Data to send.
   //
   std::size_t sendto(const std::vector<char> &data, std::size_t size) {
-    if (fd_ == -1)
-      throw std::logic_error(
-          error::format("udp::socket::sendto: You need to create a valid "
-                        "datagram socket before sending data.",
-                        __LINE__));
+    if (fd_ == -1) {
+      HERMES_THROW(error::LOGIC,
+                   " In member function std::size_t "
+                   "hermes::network::udp::socket::sendto(const "
+                   "std::vector<char> &, std::size_t):",
+                   __LINE__,
+                   " Invalid operation: file descriptor equals to: -1.");
+    }
 
     int res =
         ::sendto(fd_, data.data(), size, 0, info_.ai_addr, info_.ai_addrlen);
 
-    if (res == -1)
-      throw std::runtime_error(
-          error::format("udp::socket::sendto: sendto() failed.", __LINE__));
+    if (res == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In member function std::size_t "
+                   "hermes::network::udp::socket::sendto(const "
+                   "std::vector<char> &, std::size_t):",
+                   __LINE__, " error: sendto() failed.");
+    }
 
     return res;
   }
@@ -808,19 +892,26 @@ class socket final : basic {
   //    - a reference on a const vector of char: Data to broadcast.
   //
   std::size_t broadcast(const std::vector<char> &data, std::size_t size) {
-    if (fd_ == -1)
-      throw std::logic_error(
-          error::format("udp::socket::broadcast: You need to create a valid "
-                        "data socket before broadcasting data.",
-                        __LINE__));
+    if (fd_ == -1) {
+      HERMES_THROW(error::LOGIC,
+                   " In member function std::size_t "
+                   "hermes::network::udp::socket::broadcast(const "
+                   "std::vector<char> &, std::size_t):",
+                   __LINE__,
+                   " Invalid operation: file descriptor equals to: -1.");
+    }
 
     int res =
         ::sendto(fd_, data.data(), size, 0, (struct sockaddr *)&broadcast_info_,
                  sizeof(broadcast_info_));
 
-    if (res == -1)
-      throw std::runtime_error(
-          error::format("udp::socket::broadcast: sendto() failed.", __LINE__));
+    if (res == -1) {
+      HERMES_THROW(error::LOGIC,
+                   " In member function std::size_t "
+                   "hermes::network::udp::socket::broadcast(const "
+                   "std::vector<char> &, std::size_t):",
+                   __LINE__, " error: sendto() failed.");
+    }
 
     return res;
   }
@@ -836,17 +927,20 @@ class socket final : basic {
   //      - unsigned int port.
   //
   void bind(const std::string &host, unsigned int port) {
-    if (is_socket_bound_)
-      throw std::logic_error(
-          error::format("udp::socket::bind: Socket is  already bound to" +
-                            host_ + ":" + std::to_string(port_),
-                        __LINE__));
+    if (is_socket_bound_) {
+      std::cout << "WARNING: Socket already bound\n";
+      return;
+    }
 
     create_socket(host, port);
 
-    if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1)
-      throw std::runtime_error(
-          error::format("udp::socket::bind: bind() failed.", __LINE__));
+    if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1) {
+      HERMES_THROW(error::LOGIC,
+                   " In member function void "
+                   "hermes::network::udp::socket::bind(const std::string &, "
+                   "unsigned int):",
+                   __LINE__, " error: sendto() failed.");
+    }
 
     is_socket_bound_ = true;
   }
@@ -857,20 +951,26 @@ class socket final : basic {
   //  stored.
   //
   std::size_t recvfrom(std::vector<char> &incoming) {
-    if (!is_socket_bound_)
-      throw std::logic_error(
-          error::format("udp::socket::recvfrom: You need to bind a valid "
-                        "datagram socket before receiving data.",
-                        __LINE__));
+    if (!is_socket_bound_) {
+      HERMES_THROW(
+          error::LOGIC,
+          " In member function std::size_t "
+          "hermes::network::udp::socket::recvfrom(std::vector<char> &):",
+          __LINE__, " Invalid operation: You must bind the socket first.");
+    }
 
     socklen_t len;
     len = sizeof(source_info_);
     int res = ::recvfrom(fd_, incoming.data(), tools::BUFFER_SIZE - 1, 0,
                          (struct sockaddr *)&source_info_, &len);
 
-    if (res == -1)
-      throw std::runtime_error(
-          error::format("udp::socket::recvfrom: recvfrom() failed.", __LINE__));
+    if (res == -1) {
+      HERMES_THROW(
+          error::RUNTIME,
+          " In member function std::size_t "
+          "hermes::network::udp::socket::recvfrom(std::vector<char> &):",
+          __LINE__, " error: recvfrom() failed.");
+    }
 
     return res;
   }
@@ -882,9 +982,12 @@ class socket final : basic {
   // Close the file descriptor associated to the socket.
   void close(void) {
     if (fd_ != -1) {
-      if (::close(fd_) == -1)
-        throw std::runtime_error(
-            error::format("tcp::socket::close: close() failed.", __LINE__));
+      if (::close(fd_) == -1) {
+        HERMES_THROW(error::LOGIC,
+                     " In member function void "
+                     "hermes::network::udp::socket::close(void):",
+                     __LINE__, " error: close() failed.");
+      }
     }
     fd_ = -1;
     is_socket_bound_ = false;
@@ -915,8 +1018,11 @@ class socket final : basic {
     if ((status = ::getaddrinfo(!host_.compare("") ? NULL : host_.c_str(),
                                 std::to_string(port_).c_str(), &hints,
                                 &addr_infos)) != 0) {
-      throw std::runtime_error(error::format(
-          "udp::socket::get_addr_info: getaddrinfo() failed.", __LINE__));
+      HERMES_THROW(error::RUNTIME,
+                   " In private member function void "
+                   "hermes::network::udp::socket::create_socket(const "
+                   "std::string &, unsigned int):",
+                   __LINE__, " error: getaddrinfo() failed.");
     }
 
     for (auto p = addr_infos; p != NULL; p = p->ai_next) {
@@ -930,9 +1036,13 @@ class socket final : basic {
       break;
     }
 
-    if (fd_ == -1)
-      throw std::runtime_error(error::format(
-          "udp::socket::create_socket: socket() failed.", __LINE__));
+    if (fd_ == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In private member function void "
+                   "hermes::network::udp::socket::create_socket(const "
+                   "std::string &, unsigned int):",
+                   __LINE__, " error: getaddrinfo() failed.");
+    }
   }
 
   // Create a socket and enable it for broadcasting data.
@@ -949,18 +1059,29 @@ class socket final : basic {
     host_ = host;
     port_ = port;
 
-    if ((hostent = ::gethostbyname(host_.c_str())) == NULL)
-      throw std::runtime_error(error::format(
-          "udp::socket::create_broadcaster: gethostbyname() failed.",
-          __LINE__));
+    if ((hostent = ::gethostbyname(host_.c_str())) == NULL) {
+      HERMES_THROW(error::RUNTIME,
+                   " In private member function void "
+                   "hermes::network::udp::socket::create_broadcaster(const "
+                   "std::string &, unsigned int):",
+                   __LINE__, " error: gethostbyname() failed.");
+    }
 
-    if ((fd_ = ::socket(AF_INET, SOCK_DGRAM, 0)) == -1)
-      throw std::runtime_error(error::format(
-          "udp::socket::create_broadcaster: socket() failed.", __LINE__));
+    if ((fd_ = ::socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In private member function void "
+                   "hermes::network::udp::socket::create_broadcaster(const "
+                   "std::string &, unsigned int):",
+                   __LINE__, " error: socket() failed.");
+    }
 
-    if (::setsockopt(fd_, SOL_SOCKET, SO_BROADCAST, &b, sizeof(int)) == -1)
-      throw std::runtime_error(error::format(
-          "udp::socket::create_broadcaster: setsockopt() failed", __LINE__));
+    if (::setsockopt(fd_, SOL_SOCKET, SO_BROADCAST, &b, sizeof(int)) == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In private member function void "
+                   "hermes::network::udp::socket::create_broadcaster(const "
+                   "std::string &, unsigned int):",
+                   __LINE__, " error: setsockopt() failed.");
+    }
 
     broadcast_info_.sin_family = AF_INET;
     broadcast_info_.sin_port = ::htons(port_);
@@ -1150,9 +1271,11 @@ class poller final : basic {
  public:
   // Construct an empty polling model.
   poller(void) : stop_(false), socketpair_{-1, -1} {
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, socketpair_) == -1)
-      throw std::runtime_error(error::format(
-          "poller::poller: Error socketpair() failed.", __LINE__));
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, socketpair_) == -1) {
+      HERMES_THROW(error::RUNTIME,
+                   " In the constructor hermes::poller::poller(void):",
+                   __LINE__, " error: socketpair() failed.");
+    }
 
     poll_master_ = std::thread([this]() {
       while (!stop_) {
@@ -1446,7 +1569,7 @@ class client final : tools::basic {
       result = socket_.send(buffer, buffer.size());
       success = true;
     } catch (const std::exception &e) {
-      std::cerr << error::format(e.what(), __LINE__) << std::endl;
+      std::cerr << e.what() << std::endl;
       success = false;
     }
 
@@ -1473,7 +1596,7 @@ class client final : tools::basic {
       result = socket_.receive(size_to_read);
       success = true;
     } catch (const std::exception &e) {
-      std::cerr << error::format(e.what(), __LINE__) << std::endl;
+      std::cerr << e.what() << std::endl;
       success = false;
     }
 
@@ -1492,9 +1615,13 @@ class client final : tools::basic {
   //  - unsigned int port.
   //
   void connect(const std::string &host, unsigned int port) {
-    if (connected_)
-      throw std::logic_error(error::format(
-          "tcp::client::connect: The client is already connected.", __LINE__));
+    if (connected_) {
+      HERMES_THROW(error::LOGIC,
+                   " In the member function void "
+                   "hermes::network::tcp::client::connect(const std::string &, "
+                   "unsigned int):",
+                   __LINE__, " error: The client is already connected.");
+    }
 
     socket_.connect(host, port);
     poller_->add<tcp::socket>(socket_);
@@ -1522,11 +1649,15 @@ class client final : tools::basic {
   //
   void async_send(const std::vector<char> &data,
                   const async_send_callback &callback) {
-    if (!connected_)
-      throw std::logic_error(
-          error::format("tcp::client::async_send: You must connect the client "
-                        "before trying to send data.",
-                        __LINE__));
+    if (!connected_) {
+      HERMES_THROW(error::LOGIC,
+                   " In the member function void "
+                   "hermes::network::tcp::client::async_send(const "
+                   "std::vector<char> &, const async_send_callback &):",
+                   __LINE__,
+                   " Invalid operation: The client must be connected before "
+                   "being able to perform an asynchronous send of data.");
+    }
 
     std::unique_lock<std::mutex> lock(send_requests_mutex_);
 
@@ -1535,11 +1666,7 @@ class client final : tools::basic {
       poller_->wait_for_write<tcp::socket>(socket_,
                                            std::bind(&client::on_send, this));
     } else {
-      std::cerr << error::format(
-                       "tcp::client::async_send: You must provide a callback "
-                       "in order to perform an asynchronous send of data.",
-                       __LINE__)
-                << std::endl;
+      std::cout << "WARNING: You must provide a callback\n";
     }
   }
 
@@ -1551,11 +1678,15 @@ class client final : tools::basic {
   //    when data has been received.
   //
   void async_receive(std::size_t size, const async_receive_callback &callback) {
-    if (!connected_)
-      throw std::logic_error(
-          error::format("tcp::client::async_receive: You must connect the "
-                        "client before trying to receive data.",
-                        __LINE__));
+    if (!connected_) {
+      HERMES_THROW(error::LOGIC,
+                   " In the member function void "
+                   "hermes::network::tcp::client::async_receive(std::size_t, "
+                   "const async_receive_callback &):",
+                   __LINE__,
+                   " Invalid operation: The client must be connected before "
+                   "being able to perform an asynchronous receive of data.");
+    }
 
     std::unique_lock<std::mutex> lock(receive_requests_mutex_);
 
@@ -1564,11 +1695,7 @@ class client final : tools::basic {
       poller_->wait_for_read<tcp::socket>(socket_,
                                           std::bind(&client::on_receive, this));
     } else {
-      std::cerr << error::format(
-                       "tcp::client::async_send: You must provide a callback "
-                       "in order to perform an asynchronous receive of data.",
-                       __LINE__)
-                << std::endl;
+      std::cout << "WARNING: You must provide a callback\n";
     }
   }
 
@@ -1628,7 +1755,7 @@ class server final : basic {
       if (callback_) callback_(new_client);
       clients_.insert(new_client);
     } catch (const std::exception &e) {
-      std::cerr << error::format(e.what(), __LINE__) << std::endl;
+      std::cerr << e.what() << std::endl;
       stop();
     }
   }
@@ -1651,16 +1778,25 @@ class server final : basic {
   //    - unsigned int port.
   //
   void run(const std::string &host, unsigned int port) {
-    if (running_)
-      throw std::logic_error(error::format(
-          "tcp::server::run: Server is already running.", __LINE__));
+    if (running_) {
+      HERMES_THROW(error::LOGIC,
+                   " In the member function void "
+                   "hermes::network::tcp::server::run(const std::string &, "
+                   "unsigned int):",
+                   __LINE__,
+                   " Invalid operation: The server is already running.");
+    }
 
-    if (!callback_)
-      throw std::logic_error(error::format(
-          "tcp::server::run: You must provide a callback for a new "
-          "connection.\n Use method on_connection(const std::function<const "
-          "std::shared_ptr<client> &> &callback) before running the server.",
-          __LINE__));
+    if (!callback_) {
+      HERMES_THROW(error::ARGS,
+                   " In the member function void "
+                   "hermes::network::tcp::server::run(const std::string &, "
+                   "unsigned int):",
+                   __LINE__,
+                   " error: You MUST provide a callback to the server in case "
+                   "of connection using the 'on_connection' member function "
+                   "before running_ the server.");
+    }
 
     socket_.bind(host, port);
     socket_.listen(tools::BACKLOG);
@@ -1742,7 +1878,7 @@ class client final : basic {
       else
         result = socket_.sendto(buffer, buffer.size());
     } catch (const std::exception &e) {
-      std::cerr << error::format(e.what(), __LINE__) << std::endl;
+      std::cerr << e.what() << std::endl;
     }
 
     send_requests_.pop();
@@ -1784,11 +1920,10 @@ class client final : basic {
   //
   void async_send(const std::vector<char> &data,
                   const async_send_callback &callback) {
-    if (broadcast_mode_)
-      throw std::logic_error(
-          error::format("udp::client::async_send: Broadcast mode enabled. Use "
-                        "'async_broadcast' instead of 'async_send'.",
-                        __LINE__));
+    if (broadcast_mode_) {
+      std::cout << "INFO: broadcast mode enabled. Use 'async_broadcast'.\n";
+      return;
+    }
 
     std::unique_lock<std::mutex> lock(mutex_);
 
@@ -1797,11 +1932,7 @@ class client final : basic {
       poller_->wait_for_write<udp::socket>(socket_,
                                            std::bind(&client::on_send, this));
     } else {
-      std::cerr << error::format(
-                       "udp::client::async_send: You must provide a callback "
-                       "in order to perform an asynchronous send of data.",
-                       __LINE__)
-                << std::endl;
+      std::cout << "WARNING: You must provide a callback\n";
     }
   }
 
@@ -1826,11 +1957,10 @@ class client final : basic {
   //
   void async_broadcast(const std::vector<char> &data,
                        const async_send_callback &callback) {
-    if (!broadcast_mode_)
-      throw std::logic_error(error::format(
-          "udp::client::async_broadcast: Broadcast mode not enabled. Use "
-          "'async_send' instead of 'async_broadcast'.",
-          __LINE__));
+    if (!broadcast_mode_) {
+      std::cout << "INFO: broadcast mode disabled. Use 'async_send'.\n";
+      return;
+    }
 
     std::unique_lock<std::mutex> lock(mutex_);
 
@@ -1839,11 +1969,7 @@ class client final : basic {
       poller_->wait_for_write<udp::socket>(socket_,
                                            std::bind(&client::on_send, this));
     } else {
-      std::cerr << error::format(
-                       "udp::client::async_send: You must provide a callback "
-                       "in order to perform an asynchronous send of data.",
-                       __LINE__)
-                << std::endl;
+      std::cout << "WARNING: You must provide a callback\n";
     }
   }
 
@@ -1903,7 +2029,7 @@ class server final : basic {
     try {
       result = socket_.recvfrom(buffer);
     } catch (const std::exception &e) {
-      std::cerr << error::format(e.what(), __LINE__) << std::endl;
+      std::cerr << e.what() << std::endl;
     }
 
     if (callback_) {
@@ -1921,11 +2047,14 @@ class server final : basic {
   //    - unsigned int port.
   //
   void bind(const std::string &host, unsigned int port) {
-    if (bound_)
-      throw std::logic_error(
-          error::format("udp::server::bind: Server is already bound to" + host +
-                            ":" + std::to_string(port) + ".",
-                        __LINE__));
+    if (bound_) {
+      HERMES_THROW(error::LOGIC,
+                   " In the member function void "
+                   "hermes::network::udp::server::bind(const std::string &, "
+                   "unsigned int):",
+                   __LINE__,
+                   " Invalid operation: You need to bind the server before.");
+    }
 
     socket_.bind(host, port);
     poller_->add<udp::socket>(socket_);
@@ -1940,21 +2069,19 @@ class server final : basic {
   // executed execute when the receive operation has been performed.
   //
   void async_recvfrom(const async_receive_callback &callback) {
-    if (!bound_)
-      throw std::logic_error(
-          error::format("udp::socket::async_recvfrom: You need to bind the "
-                        "server on a host/port before using it.",
-                        __LINE__));
+    if (!bound_) {
+      HERMES_THROW(error::LOGIC,
+                   " In the member function void "
+                   "hermes::network::udp::server::async_recvfrom(const "
+                   "async_receive_callback &):",
+                   __LINE__,
+                   " Invalid operation: You need to bind the server before.");
+    }
 
     if (callback) {
       callback_ = callback;
     } else {
-      std::cerr << error::format(
-                       "udp::client::async_recvfrom: You must provide a "
-                       "callback in order to perform an asynchronous receive "
-                       "of data.",
-                       __LINE__)
-                << std::endl;
+      std::cout << "WARNING: You must provide a callback\n";
     }
   }
 

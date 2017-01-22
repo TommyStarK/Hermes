@@ -24,6 +24,7 @@ SCENARIO("testing workers (Thread pool)") {
     REQUIRE_NOTHROW(workers.enqueue_job([]() {}));
     REQUIRE_NOTHROW(workers.enqueue_job([]() {}));
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    REQUIRE_NOTHROW(workers.enqueue_job(nullptr));
     REQUIRE_NOTHROW(workers.enqueue_job([&]() { workers.stop(); }));
   }
 }
@@ -54,7 +55,6 @@ SCENARIO("testing TCP socket: server operations") {
       REQUIRE(socket_for_test.get_port() == 27017);
       REQUIRE(socket_for_test.is_socket_bound() == true);
       REQUIRE((socket_for_test == default_socket) == false);
-      REQUIRE_THROWS(socket_for_test.bind("127.0.0.1", 27017));
       REQUIRE_NOTHROW(socket_for_test.close());
     }
 
@@ -261,7 +261,7 @@ SCENARIO("testing UDP socket: server operations") {
         REQUIRE(socket1.get_port() == 27017);
         REQUIRE(socket1.is_socket_bound());
         REQUIRE((socket1 == socket2) == false);
-        REQUIRE_THROWS(socket1.bind("", 27017));
+        REQUIRE_NOTHROW(socket1.bind("", 27017));
       }
 
       REQUIRE_NOTHROW(socket1.close());
@@ -342,7 +342,7 @@ SCENARIO("testing UDP server and client operations") {
                           [](int bytes_sent) { REQUIRE(bytes_sent == 13); });
 
         REQUIRE_NOTHROW(client.async_send("toto", nullptr));
-        REQUIRE_THROWS(client.async_broadcast("toto", nullptr));
+        REQUIRE_NOTHROW(client.async_broadcast("toto", nullptr));
       });
 
       REQUIRE_NOTHROW(s.join());
