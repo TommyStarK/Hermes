@@ -42,8 +42,8 @@ Basic abstraction of the TCP socket features for unix and windows socket. The TC
   // Returns the port associated to the socket.
   unsigned int get_port(void) const;
 
-  // Returns true if the socket is connected, false otherwise.
-  bool is_socket_bound(void) const;
+  // Returns true if the socket has a name assigned, false otherwise.
+  bool has_a_name_assigned(void) const;
 
 
   //

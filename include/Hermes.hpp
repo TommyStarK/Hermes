@@ -36,14 +36,16 @@ namespace hermes {
 namespace tools {
 // Feel free to modify any value of the following variables to fit to your
 // needs:
+//
 // - TIMEOUT
 // - BACKLOG
 // - BUFFER_SIZE
 // - THREADS_NBR
 
-// Default timeout value (milliseconds).
-// Set to infinite by default in order to allow the poller to wait indefinitely
-// for an event.
+// Default timeout value in milliseconds.
+// It defines the minimum number of milliseconds that the poller will block.
+// Set to infinite (-1 on unix system) by default in order to allow the poller
+// to wait indefinitely for an event.
 #ifdef _WIN32
 static INT TIMEOUT = INFINITE;
 #else
@@ -52,44 +54,75 @@ static int TIMEOUT = -1;
 
 // Default size for the maximum length to which the queue for pending
 // connections may grow.
-static unsigned int BACKLOG = 100;
+static unsigned int const BACKLOG = 100;
 // Default size used for buffers.
-static unsigned int BUFFER_SIZE = 8096;
+static unsigned int const BUFFER_SIZE = 8096;
 // Default number of concurrent threads supported by the system.
 static unsigned int const THREADS_NBR = std::thread::hardware_concurrency();
 
 //
-// Basic class with default constructor and deleted copy constructor, deleted
-// move constructor and delete assignment operator.
+// _default_signatures_ class represents the default signatures for the
+// following:
+//  - Default constructor.
+//  - Copy constructor.
+//  - Move constructor.
+//  - Assignment operator.
 //
-class basic {
+class _default_signatures_ {
  public:
-  basic(const basic &) = delete;
+  _default_signatures_(const _default_signatures_ &) = delete;
 
-  basic(const basic &&) = delete;
+  _default_signatures_(const _default_signatures_ &&) = delete;
 
-  basic &operator=(const basic &) = delete;
+  _default_signatures_ &operator=(const _default_signatures_ &) = delete;
 
-  basic() = default;
+  _default_signatures_() = default;
 };
 
 //
-// When constructed, 'error' class stores the errno value and set it back at its
-// destruction. Otherwithe it allows to throw a specified 'type' of error and
-// provide a clear format for the error messages.
+// When construct, the 'error' class stores the value of 'errno'. The store
+// value of 'errno' is retrievable using the 'get_error()' member function.
 //
+// Furthermore, 'error' allows to throw an exception of a specified type and
+// format the error message. The type of exception to be thrown is represented
+// following:
 //
-class error final : basic {
+//    enum type {
+//      NONE = 0,    // default type.
+//      ARGS = 1,    // Should throw an exception of type: std::invalid_argument
+//      LOGIC = 2,   // Should throw an exception of type: std::logic_error
+//      RUNTIME = 3  // Should throw an exception of type: std::runtime_error
+//    };
+//
+class error final : _default_signatures_ {
  public:
   error() : errno_(errno) {}
 
-  ~error() { errno = errno_; }
+  ~error() = default;
 
+  // Represents the type of exception.
   enum type { NONE = 0, ARGS = 1, LOGIC = 2, RUNTIME = 3 };
 
+ public:
+  // Returns the stored value of 'errno'.
   int get_error(void) const { return errno_; }
 
-  // format the error message displayed.
+  // Format the error message.
+  //
+  // @static:
+  //  Member function specified as 'static', it can be used without instanciate
+  //  an 'error' object.
+  //
+  // @params:
+  //    - [in] a reference on a const string containing the name of the function
+  //    where the error occurred.
+  //    - [line] int representing the number of the line where the error is
+  //    reported.
+  //    - [message] a reference on a const string containing the message to
+  //    report.
+  //
+  // @return value: A string reporting the error correctly formated.
+  //
   static std::string format(const std::string &in, int line,
                             const std::string &message) {
     return std::string(__FILE__) + std::string(": ") + in + std::string("\n") +
@@ -97,6 +130,21 @@ class error final : basic {
            std::string(" ") + message + std::string("\n");
   }
 
+  // Throw an exeception of a given type and format the according message.
+  //
+  // @static:
+  //  Member function specified as 'static', it can be used without instanciate
+  //  an 'error' object.
+  //
+  // @params:
+  //    - [type] enum type, representing the type of exception to throw.
+  //    - [in] a reference on a const string containing the name of the function
+  //    where the error occurred.
+  //    - [line] int representing the number of the line where the error is
+  //    reported.
+  //    - [message] a reference on a const string containing the message to
+  //    report.
+  //
   static void require_throws(type type, const std::string &in, int line,
                              const std::string &message) {
     switch (type) {
@@ -115,9 +163,10 @@ class error final : basic {
   }
 
  private:
-  int errno_ = 0;
+  int errno_;
 };
 
+// Convenience macro.
 #define HERMES_THROW(type, in, line, message)       \
   {                                                 \
     std::cerr << message << std::endl;              \
@@ -125,10 +174,11 @@ class error final : basic {
   }
 
 //
-// The defer class allows you to designate specified functions to be executed
-// just before returning from the current function block.
+// The 'defer' class allows you to designate specified callbacks to be executed
+// just before returning from the current function block. The callback required
+// to construct a 'defer' object will be executed when the object is destroyed.
 //
-class defer final : basic {
+class defer final : _default_signatures_ {
  public:
   defer(const std::function<void(void)> &callback) : callback_(callback) {}
 
@@ -140,38 +190,46 @@ class defer final : basic {
   }
 
  private:
+  // The callback to execute when the 'defer' object is destroyed.
   std::function<void(void)> callback_;
 };
 
 //
-// A signal wrapper, it allows to block the thread calling the 'wait_for' method
-// until the specified signal is caught.
+// A signal wrapper, it allows to block the thread calling until the specified
+// signal is caught.
 //
-class signal final : basic {
+class signal final : _default_signatures_ {
  public:
-  // Returns a reference on a static mutex.
-  // Used to build the lock to block the calling thread until the specified
-  // signal is caught.
+  // Returns a reference on a static mutex, used to build the unique_lock to
+  // lock the thread.
   static std::mutex &mutex(void) {
     static std::mutex mutex;
     return mutex;
   }
 
-  // Returns a reference on a static condition variable, used to lock the thread
-  // waiting for a specific signal.
+  // Returns a reference on a static condition variable, used to block the
+  // calling thread until notified to resume.
   static std::condition_variable &condvar(void) {
     static std::condition_variable condvar;
     return condvar;
   }
 
   // A signal handler.
-  // If the registered signal is caught it will invoke this function.
+  // If the registered signal is caught it will invoke this function and notify
+  // the condition variable to resume.
   static void signal_handler(int) { condvar().notify_all(); }
 
   // Wait until the specified signal is caught.
+  // The 'wait_for()' member function wait until the specified signal is caught.
+  // The calling thread remains blocked until woken up by another thread
+  // invoking the signal handler when the signal is caught.
+  //
+  // @static:
+  //  Member function specified as 'static', it can be used without instanciate
+  //  a 'signal' object.
   //
   // @param:
-  //    - the signal number.
+  //    - [signal_number] int representing the signal to catch.
   //
   static void wait_for(int signal_number) {
     ::signal(signal_number, &signal::signal_handler);
@@ -180,29 +238,32 @@ class signal final : basic {
   }
 };
 
-// A thread pool waiting for jobs for concurrent execution.
-// Jobs are enqueued in a synchronized queue. Each worker (thread) is waiting
-// for process a job.
 //
-// @param:
-//     - number of concurrent threads required.
+// A thread pool using threads as workers to execute concurrently jobs stored in
+// the synchronized queue. The workers start working and waiting for jobs as
+// soon as the 'workers' object is constructed.
 //
-class workers final : basic {
+class workers final : _default_signatures_ {
  public:
+  // Constructor.
+  //
+  // @param:
+  //  - [workers_nbr] unsigned int representing the number of concurrent threads
+  //  that the constructor will create.
+  //
   explicit workers(unsigned int workers_nbr = THREADS_NBR) : stop_(false) {
     // Check the number of concurrent threads supported by the system.
     if (workers_nbr > std::thread::hardware_concurrency()) {
-      HERMES_THROW(
-          error::ARGS, __PRETTY_FUNCTION__, __LINE__,
-          " error: Number of workers is greater than the number of concurrent "
-          "threads supported by the system.");
+      HERMES_THROW(error::ARGS, __PRETTY_FUNCTION__, __LINE__,
+                   " error: Number of 'workers' is greater than the number of "
+                   "concurrent hreads supported by the system.");
     }
 
-    // We start the workers.
+    // Start the workers.
     for (unsigned int i = 0; i < workers_nbr; ++i)
       workers_.push_back(std::thread([this]() {
         // Worker routine:
-        // Each worker is waiting for a new job. The first worker who can
+        // Each worker is waiting for a new job. The first worker that can
         // process a job, removes it from the queue and executes it.
 
         // We loop waiting for a new job.
@@ -224,11 +285,13 @@ class workers final : basic {
   // It will notify every threads that a job has been enqueued.
   //
   // @param:
-  //    - a reference on a const function object: The job to enqueue.
+  //    - [new_job] a reference on a const function object representing the job
+  //    to enqueue.
   //
   void enqueue_job(const std::function<void(void)> &new_job) {
     if (!new_job) {
-      std::cout << "WARNING: Passing nullptr.\n";
+      std::cout << "WARNING: Passing nullptr instead of const "
+                   "std::function<void(void)> &.\n";
       return;
     }
 
@@ -242,10 +305,7 @@ class workers final : basic {
     if (stop_) return;
 
     stop_ = true;
-    // We notify all threads that workers should stop working in order to
-    // join every worker.
     condition_.notify_all();
-
     for (auto &worker : workers_) worker.join();
     workers_.clear();
   }
@@ -275,7 +335,7 @@ class workers final : basic {
   // Condition variable to synchronize the threads.
   std::condition_variable condition_;
 
-  // thread pool.
+  // Thread pool.
   std::vector<std::thread> workers_;
 
   // Contains pending jobs.
@@ -294,57 +354,51 @@ namespace tcp {
 
 // Windows tcp socket.
 // Provides blocking stream-oriented socket functionalities.
-class socket final : basic {
+class socket final : _default_signatures_ {
  public:
-  socket(void) : fd_(-1), host_(""), port_(0) {}
+  socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
 
   socket(SOCKET fd, const std::string &host, unsigned int port)
-      : fd_(fd), host_(host), port_(port) {}
+      : fd_(fd), host_(host), port_(port), has_a_name_assigned_(false) {}
 
-  socket(socket &&socket) : fd_(std::move(socket.get_fd())) {}
+  socket(socket &&socket)
+      : fd_(std::move(socket.get_fd())),
+        host_(socket.get_host()),
+        port_(socket.get_port()),
+        has_a_name_assigned_(false) {}
 
   bool operator==(const socket &socket) const { return fd_ == socket.get_fd(); }
 
   ~socket(void) = default;
 
  public:
-  //
   SOCKET get_fd(void) const { return fd_; }
 
-  //
   const std::string &get_host(void) const { return host_; }
 
-  //
   unsigned int get_port(void) const { return port_; }
 
-  //
-  bool is_socket_bound(void) const { return false; }
+  bool has_a_name_assigned(void) const { return has_a_name_assigned_; }
 
  public:
-  //
   void bind(const std::string &host, unsigned int port) {
     UNUSED(host);
     UNUSED(port);
   }
 
-  //
   void listen(unsigned int backlog) { UNUSED(backlog); }
 
-  //
   tcp::socket accept(void) { return {0, "", 0}; }
 
-  //
   void connect(const std::string &host, unsigned int port) {
     UNUSED(host);
     UNUSED(port);
   }
 
-  //
   INT send(const std::string &data) {
     return send(std::vector<char>(data.begin(), data.end()), data.size());
   }
 
-  //
   INT send(const std::vector<char> &data, INT size) {
     UNUSED(data);
     UNUSED(size);
@@ -356,43 +410,41 @@ class socket final : basic {
     return buffer;
   }
 
-  //
   void close(void) {}
 
  private:
-  //
   SOCKET fd_;
 
-  //
   std::string host_;
 
-  //
   unsigned int port_;
+
+  bool has_a_name_assigned_;
 };
 
 #else
 
 // Unix tcp socket.
-// Provides synchronous stream-oriented socket functionality.
-class socket final : basic {
+// Provides blocking stream-oriented socket functionalities.
+class socket final : _default_signatures_ {
  public:
   // Basic constructor.
-  socket(void) : fd_(-1), host_(""), port_(0), is_socket_bound_(false) {}
+  socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
 
   // Create a socket from an existing file descriptor.
   socket(int fd, const std::string &host, unsigned int port)
-      : fd_(fd), host_(host), port_(port), is_socket_bound_(false) {}
+      : fd_(fd), host_(host), port_(port), has_a_name_assigned_(false) {}
 
   // Move constructor.
   socket(socket &&socket)
       : fd_(std::move(socket.get_fd())),
         host_(socket.get_host()),
         port_(socket.get_port()),
-        is_socket_bound_(false),
-        info_(std::move(socket.get_struct_addrinfo())) {
+        has_a_name_assigned_(false) {
     socket.fd_ = -1;
   }
 
+  // Comparison operator.
   bool operator==(const socket &s) const { return fd_ == s.get_fd(); }
 
   ~socket(void) = default;
@@ -407,14 +459,8 @@ class socket final : basic {
   // Returns the socket port.
   unsigned int get_port(void) const { return port_; }
 
-  // Returns true or false whether the socket is bound.
-  bool is_socket_bound(void) const { return is_socket_bound_; }
-
-  // Returns a reference on a structure containing a network address used by the
-  // socket.
-  struct addrinfo &get_struct_addrinfo(void) {
-    return info_;
-  }
+  // Returns true or false whether the socket has a name assigned.
+  bool has_a_name_assigned(void) const { return has_a_name_assigned_; }
 
  public:
   //
@@ -424,29 +470,32 @@ class socket final : basic {
   // Assign a name to the socket.
   //
   // @params:
-  //    - string host.
-  //    - unsigned int port.
+  //    - [host] a reference on a const string representing the address to
+  //    assign to the socket.
+  //    - [port] unsigned int representing the port to assign to the socket.
   //
   void bind(const std::string &host, unsigned int port) {
-    if (is_socket_bound_) {
-      std::cout << "WARNING: Socket already bound\n";
+    if (has_a_name_assigned()) {
+      std::cout << "WARNING: An address is already assigned to this socket.\n";
       return;
     }
 
-    create_socket(host, port);
-
     int yes = 1;
+    create_socket(host, port);
+    assert(info_ && info_->ai_addr && info_->ai_addrlen);
+    defer that([this] { ::freeaddrinfo(info_); });
+
     if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: setsockopt() failed.");
+                   "error: setsockopt() failed.");
     }
 
-    if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1) {
+    if (::bind(fd_, info_->ai_addr, info_->ai_addrlen) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: bind() failed.");
+                   "error: bind() failed.");
     }
 
-    is_socket_bound_ = true;
+    has_a_name_assigned_ = true;
   }
 
   // Mark the socket as a passive socket.
@@ -454,10 +503,10 @@ class socket final : basic {
   // @param: cf top of "Hermes.hpp"
   //
   void listen(unsigned int backlog = BACKLOG) {
-    if (!is_socket_bound_) {
+    if (!has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: The socket must be bound before "
-                   "listening for incoming connections.");
+                   "Invalid operation: Use the member function 'bind' before "
+                   "using 'listen' to mark the socket as passive.");
     }
 
     if (backlog > SOMAXCONN) {
@@ -468,23 +517,31 @@ class socket final : basic {
 
     if (::listen(fd_, backlog) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: listen() failed.");
+                   "error: listen() failed.");
     }
   }
 
   // Accept a new connection.
+  //
+  // @return value: A TCP socket referring to the connected client.
+  //
   tcp::socket accept(void) {
-    socklen_t size;
     char host[NI_MAXHOST];
     char port[NI_MAXSERV];
     struct sockaddr_storage client;
 
-    size = sizeof(client);
+    if (fd_ == -1) {
+      HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
+                   "Invalid operation: Use the member functions 'bind' then "
+                   "'listen' before accepting a new connection.");
+    }
+
+    socklen_t size = sizeof(client);
     int new_fd = ::accept(fd_, (struct sockaddr *)&client, &size);
 
     if (new_fd == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: accept() failed.");
+                   "error: accept() failed.");
     }
 
     int res = getnameinfo((struct sockaddr *)&client, size, host, sizeof(host),
@@ -492,7 +549,7 @@ class socket final : basic {
 
     if (res != 0) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: getnameinfo() failed.");
+                   "error: getnameinfo() failed.");
     }
 
     return {new_fd, std::string(host), (unsigned int)std::stoi(port)};
@@ -505,28 +562,33 @@ class socket final : basic {
   // Connect to a remote host.
   //
   // @params:
-  //    - string host.
-  //    - unsigned int port.
+  //    - [host] a reference on a const string containing the address of the
+  //    remote server which we want to connect.
+  //    - [port] unsigned int representing the port of the remote server
+  //    which we want to connect.
   //
   void connect(const std::string &host, unsigned int port) {
-    if (is_socket_bound_) {
+    if (has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: You cannot connect a socket which is "
-                   "already bound and planned for a server application.");
+                   "Invalid operation: You cannot connect to a remote server, "
+                   "a socket set for a server application.");
     }
 
     create_socket(host, port);
+    assert(info_ && info_->ai_addr && info_->ai_addrlen);
+    defer that([this] { ::freeaddrinfo(info_); });
 
-    if (::connect(fd_, info_.ai_addr, info_.ai_addrlen) == -1) {
+    if (::connect(fd_, info_->ai_addr, info_->ai_addrlen) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: connect() failed.");
+                   "error: connect() failed.");
     }
   }
 
   // Send data.
   //
   // @params:
-  //    - a reference on a const string: Data to send.
+  //    - [message] a reference on a const string containing the message that we
+  //    want to send.
   //
   std::size_t send(const std::string &message) {
     return send(std::vector<char>(message.begin(), message.end()),
@@ -536,20 +598,22 @@ class socket final : basic {
   // Send data.
   //
   // @params:
-  //    - a reference on a const vector of char: Data to send.
-  //    - size: The size of the message.
+  //    - [message] a reference on a const vector of char containing the message
+  //    to send.
+  //    - [message_len] std::size_t representing the size of the message.
   //
   std::size_t send(const std::vector<char> &message, std::size_t message_len) {
     if (fd_ == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: file descriptor equals to: -1");
+                   "Invalid operation: Use the member function 'connect' to "
+                   "connect to a remote server before sending data.");
     }
 
     int res = ::send(fd_, message.data(), message_len, 0);
 
     if (res == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: send() failed.");
+                   "error: send() failed.");
     }
 
     return res;
@@ -558,12 +622,17 @@ class socket final : basic {
   // Receive data.
   //
   // @param:
-  //    - size_t size to read.
+  //    - [size_to_read] std::size_t representing the number of bytes that we
+  //    want to received.
+  //
+  // @return value:
+  //   - A vector of char containing the data received.
   //
   std::vector<char> receive(std::size_t size_to_read = BUFFER_SIZE) {
     if (fd_ == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: file descriptor equals to: -1.");
+                   "Invalid operation: Use the member function 'connect' to "
+                   "connect to a remote server before receiving data.");
     }
 
     std::vector<char> buffer(size_to_read, 0);
@@ -574,10 +643,10 @@ class socket final : basic {
     switch (bytes_read) {
       case -1:
         HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                     " error: receive() failed.");
+                     "error: recv() failed.");
         break;
       case 0:
-        std::cout << "INFO: Connection closed by peer.\n";
+        std::cout << "INFO: Connection closed by the remote host.\n";
         close();
         break;
       default:
@@ -591,49 +660,51 @@ class socket final : basic {
   // Common operation.
   //
 
-  // Close the file descriptor associated to the socket.
+  // Close the file descriptor associated to the socket and reset the socket.
   void close(void) {
     if (fd_ != -1) {
+      defer that([this] {
+        fd_ = -1;
+        host_ = "";
+        port_ = 0;
+        has_a_name_assigned_ = false;
+      });
+
       if (::close(fd_) == -1) {
         HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                     " error: close() failed.");
+                     "error: close() failed.");
       }
     }
-    fd_ = -1;
-    is_socket_bound_ = false;
   }
 
  private:
-  // Creates an endpoint for communication.
+  // Create an endpoint for communication.
   //
   //  @params:
-  //      - string host.
-  //      - unsigned int port.
+  //      - [host] a reference on a const string containing the address of a
+  //      remote host.
+  //      - [port] unsigned int representing the port of a remote host.
+  //
   void create_socket(const std::string &host, unsigned int port) {
     if (fd_ != -1) return;
 
-    int status;
     struct addrinfo hints;
-    struct addrinfo *addr_infos;
-
-    host_ = host;
-    port_ = port;
     ::memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
+    auto service = std::to_string(port);
 
-    if ((status = ::getaddrinfo(host_.c_str(), std::to_string(port_).c_str(),
-                                &hints, &addr_infos)) != 0) {
+    int res = ::getaddrinfo(host.c_str(), service.c_str(), &hints, &info_);
+
+    if (res != 0) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
                    " error: getaddrinfo() failed.");
     }
 
-    for (auto p = addr_infos; p != NULL; p = p->ai_next) {
+    for (auto p = info_; p != NULL; p = p->ai_next) {
       if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
         continue;
-
-      ::memset(&info_, 0, sizeof(*p));
-      ::memcpy(&info_, p, sizeof(*p));
+      info_ = p;
       break;
     }
 
@@ -641,6 +712,9 @@ class socket final : basic {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
                    " error: socket() failed.");
     }
+
+    host_ = host;
+    port_ = port;
   }
 
  private:
@@ -653,11 +727,11 @@ class socket final : basic {
   // Socket port.
   unsigned int port_;
 
-  // Boolean to know if the socket is bound.
-  bool is_socket_bound_;
+  // Boolean to know if the socket as a name assigned.
+  bool has_a_name_assigned_;
 
   // Network address used by the socket.
-  struct addrinfo info_;
+  struct addrinfo *info_;
 };
 
 #endif  // _WIN32
@@ -670,32 +744,27 @@ namespace udp {
 
 // Windows udp socket.
 // Provides synchronous datagram-oriented socket functionality.
-class socket final : basic {
+class socket final : _default_signatures_ {
  public:
-  socket(void) : fd_(-1), host_(""), port_(0) {}
+  socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
 
   socket(SOCKET fd, const std::string &host, unsigned int port)
-      : fd_(fd), host_(host), port_(port) {}
+      : fd_(fd), host_(host), port_(port), has_a_name_assigned_(false) {}
 
   bool operator==(const socket &socket) const { return fd_ == socket.get_fd(); }
 
   ~socket(void) = default;
 
  public:
-  //
   SOCKET get_fd(void) const { return fd_; }
 
-  //
   const std::string &get_host(void) const { return host_; }
 
-  //
   unsigned int get_port(void) const { return port_; }
 
-  //
-  bool is_socket_bound(void) const { return false; }
+  bool has_a_name_assigned(void) const { return has_a_name_assigned_; }
 
  public:
-  //
   void init_datagram_socket(const std::string &host, unsigned int port,
                             bool broadcast_mode) {
     UNUSED(host);
@@ -703,63 +772,55 @@ class socket final : basic {
     UNUSED(broadcast_mode);
   }
 
-  //
   INT sendto(const std::string &data) {
     return sendto(std::vector<char>(data.begin(), data.end()), data.size());
   }
 
-  //
   INT sendto(const std::vector<char> &data, INT size) {
     UNUSED(data);
     UNUSED(size);
     return 0;
   }
 
-  //
   INT broadcast(const std::string &data) {
     return broadcast(std::vector<char>(data.begin(), data.end()), data.size());
   }
 
-  //
   INT broadcast(const std::vector<char> &data, INT size) {
     UNUSED(data);
     UNUSED(size);
     return 0;
   }
 
-  //
   void bind(const std::string &host, unsigned int port) {
     UNUSED(host);
     UNUSED(port);
   }
 
-  //
   INT recvfrom(std::vector<char> &buffer) {
     UNUSED(buffer);
     return 0;
   }
 
-  //
   void close(void) {}
 
  private:
-  //
   SOCKET fd_;
 
-  //
   std::string host_;
 
-  //
   unsigned int port_;
+
+  bool has_a_name_assigned_;
 };
 
 #else
 
 // Unix udp socket.
 // Provides synchronous datagram-oriented socket functionality.
-class socket final : basic {
+class socket final : _default_signatures_ {
  public:
-  socket(void) : fd_(-1), host_(""), port_(0), is_socket_bound_(false) {}
+  socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
 
   bool operator==(const socket &s) const { return fd_ == s.get_fd(); }
 
@@ -776,7 +837,7 @@ class socket final : basic {
   unsigned int get_port(void) const { return port_; }
 
   // Returns true if the socket is bound, false otherwise.
-  bool is_socket_bound(void) const { return is_socket_bound_; }
+  bool has_a_name_assigned(void) const { return has_a_name_assigned_; }
 
  public:
   //
@@ -785,7 +846,12 @@ class socket final : basic {
 
   // Initialize a datagram socket.
   //
-  // @param: Boolean to know if we want to enable the broadcasting mode.
+  // @params:
+  //    - [host] a reference on a const string containing the host address.
+  //    - [port] unsigned int representing the port of the remote host.
+  //    - [broadcasting] Boolean to know if we want to enable the broadcasting
+  //    mode.
+  //
   void init_datagram_socket(const std::string &host, unsigned int port,
                             bool broadcasting) {
     if (!broadcasting)
@@ -797,7 +863,10 @@ class socket final : basic {
   // Send data to another socket.
   //
   //  @param:
-  //    - a reference on a const string: Data to send.
+  //    - [str] a reference on a const string containing the data to send.
+  //
+  //  @return value:
+  //    - std::size_t: bytes sent.
   //
   std::size_t sendto(const std::string &str) {
     return sendto(std::vector<char>(str.begin(), str.end()), str.size());
@@ -805,21 +874,26 @@ class socket final : basic {
 
   // Send data to another socket.
   //
-  //  @param:
-  //    - a reference on a const vector of char: Data to send.
+  //  @params:
+  //    - [data] a reference on a const vector of char containing the data to
+  //    send.
+  //    - [size] std::size_t resenting the size of the vector.
+  //
+  //  @return value:
+  //    - std::size_t: bytes sent.
   //
   std::size_t sendto(const std::vector<char> &data, std::size_t size) {
     if (fd_ == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: file descriptor equals to: -1.");
+                   "Invalid operation: Datagram socket not Initialized.");
     }
 
     int res =
-        ::sendto(fd_, data.data(), size, 0, info_.ai_addr, info_.ai_addrlen);
+        ::sendto(fd_, data.data(), size, 0, info_->ai_addr, info_->ai_addrlen);
 
     if (res == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: sendto() failed.");
+                   "error: sendto() failed.");
     }
 
     return res;
@@ -828,7 +902,10 @@ class socket final : basic {
   // Broadcast data.
   //
   //  @param:
-  //    - a reference on a const string: Data to broadcast.
+  //    - [str] a reference on a const string containing the data to broadcast.
+  //
+  //  @return value:
+  //    - std::size_t: bytes broadcasted.
   //
   std::size_t broadcast(const std::string &str) {
     return broadcast(std::vector<char>(str.begin(), str.end()), str.size());
@@ -837,12 +914,17 @@ class socket final : basic {
   // Broadcast data.
   //
   //  @param:
-  //    - a reference on a const vector of char: Data to broadcast.
+  //    - [data] a reference on a const vector of char containing the data to
+  //    broadcast.
+  //    - [size] std::size_t representing the size of the vector.
+  //
+  //  @return value:
+  //    - std::size_t: bytes broadcasted.
   //
   std::size_t broadcast(const std::vector<char> &data, std::size_t size) {
     if (fd_ == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: file descriptor equals to: -1.");
+                   "Invalid operation: Datagram socket not Initialized.");
     }
 
     int res =
@@ -851,7 +933,7 @@ class socket final : basic {
 
     if (res == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " error: sendto() failed.");
+                   "error: sendto() failed.");
     }
 
     return res;
@@ -864,34 +946,41 @@ class socket final : basic {
   // Assign a name to the socket.
   //
   //  @params:
-  //      - string host.
-  //      - unsigned int port.
+  //      - [host] a reference on a const string containing the address to
+  //      assign to the socket.
+  //      - [port] unsigned int representing the port to assign to the socket.
   //
   void bind(const std::string &host, unsigned int port) {
-    if (is_socket_bound_) {
-      std::cout << "WARNING: Socket already bound\n";
+    if (has_a_name_assigned()) {
+      std::cout << "WARNING: Address already assigned to the socket.\n";
       return;
     }
 
     create_socket(host, port);
+    assert(info_ && info_->ai_addr && info_->ai_addrlen);
+    defer that([this] { ::freeaddrinfo(info_); });
 
-    if (::bind(fd_, info_.ai_addr, info_.ai_addrlen) == -1) {
+    if (::bind(fd_, info_->ai_addr, info_->ai_addrlen) == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
                    " error: sendto() failed.");
     }
 
-    is_socket_bound_ = true;
+    has_a_name_assigned_ = true;
   }
 
   // Receive data from another socket.
   //
-  //  @param: A reference on vector of chat where the received bytes will be
-  //  stored.
+  //  @param:
+  //    - [incoming] a reference on a vector of char to store the bytes
+  //    received.
+  //
+  //  @return value:
+  //    - std::size_t: bytes broadcasted.
   //
   std::size_t recvfrom(std::vector<char> &incoming) {
-    if (!is_socket_bound_) {
+    if (!has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: You must bind the socket first.");
+                   "Invalid operation: You must bind the socket first.");
     }
 
     socklen_t len;
@@ -901,7 +990,7 @@ class socket final : basic {
 
     if (res == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: recvfrom() failed.");
+                   "error: recvfrom() failed.");
     }
 
     return res;
@@ -913,91 +1002,95 @@ class socket final : basic {
 
   // Close the file descriptor associated to the socket.
   void close(void) {
+    defer that([this] {
+      fd_ = -1;
+      host_ = "";
+      port_ = 0;
+      has_a_name_assigned_ = false;
+    });
+
     if (fd_ != -1) {
       if (::close(fd_) == -1) {
         HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                     " error: close() failed.");
+                     "error: close() failed.");
       }
     }
-    fd_ = -1;
-    is_socket_bound_ = false;
   }
 
  private:
   // Create an endpoint for communication with the given host/port.
   //
   //  @params:
-  //      - string host.
-  //      - unsigned int port.
+  //      - [host] a reference on a const string containing a network address.
+  //      - [port] unsigned int representing a port.
   //
   void create_socket(const std::string &host, unsigned int port) {
     if (fd_ != -1) return;
 
-    int status;
     struct addrinfo hints;
-    struct addrinfo *addr_infos;
-
-    host_ = host;
-    port_ = port;
     ::memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
     hints.ai_flags = AI_PASSIVE;
+    auto service = std::to_string(port);
 
-    if ((status = ::getaddrinfo(!host_.compare("") ? NULL : host_.c_str(),
-                                std::to_string(port_).c_str(), &hints,
-                                &addr_infos)) != 0) {
+    int status = ::getaddrinfo(!host.compare("") ? NULL : host.c_str(),
+                               service.c_str(), &hints, &info_);
+
+    if (status != 0) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: getaddrinfo() failed.");
+                   "error: getaddrinfo() failed.");
     }
 
-    for (auto p = addr_infos; p != NULL; p = p->ai_next) {
+    for (auto p = info_; p != NULL; p = p->ai_next) {
       if ((fd_ = ::socket(p->ai_family, SOCK_DGRAM | SOCK_CLOEXEC,
                           IPPROTO_UDP)) == -1) {
         continue;
       }
 
-      ::memset(&info_, 0, sizeof(*p));
-      ::memcpy(&info_, p, sizeof(*p));
+      info_ = p;
       break;
     }
 
     if (fd_ == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: getaddrinfo() failed.");
+                   "error: getaddrinfo() failed.");
     }
+
+    host_ = host;
+    port_ = port;
   }
 
   // Create a socket and enable it for broadcasting data.
   //
   //  @params:
-  //      - string host.
-  //      - unsigned int port.
-  //
+  //      - [host] a reference on a const string containing a network address.
+  //      - [port] unsigned int representing a port.
+  //&
   void create_broadcaster(const std::string &host, unsigned int port) {
     if (fd_ != -1) return;
 
     int b = 1;
     struct hostent *hostent;
-    host_ = host;
-    port_ = port;
 
-    if ((hostent = ::gethostbyname(host_.c_str())) == NULL) {
+    if ((hostent = ::gethostbyname(host.c_str())) == NULL) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: gethostbyname() failed.");
+                   "error: gethostbyname() failed.");
     }
 
     if ((fd_ = ::socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: socket() failed.");
+                   "error: socket() failed.");
     }
 
     if (::setsockopt(fd_, SOL_SOCKET, SO_BROADCAST, &b, sizeof(int)) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: setsockopt() failed.");
+                   "error: setsockopt() failed.");
     }
 
+    host_ = host;
+    port_ = port;
     broadcast_info_.sin_family = AF_INET;
     broadcast_info_.sin_port = ::htons(port_);
     broadcast_info_.sin_addr = *((struct in_addr *)hostent->h_addr);
@@ -1015,10 +1108,10 @@ class socket final : basic {
   unsigned int port_;
 
   // Boolean to know if the socket is bound.
-  bool is_socket_bound_;
+  bool has_a_name_assigned_;
 
   // Network address used by the socket.
-  struct addrinfo info_;
+  struct addrinfo *info_;
 
   // Connector's address information for broadcasting data.
   struct sockaddr_in broadcast_info_;
@@ -1035,14 +1128,14 @@ class socket final : basic {
 #ifdef _WIN32
 
 // Windows event model.
-class event final : basic {
+class event final : _default_signatures_ {
  public:
   event(void) {}
   ~event(void) = default;
 };
 
 // A Windows polling wrapper.
-class poller final : basic {
+class poller final : _default_signatures_ {
  public:
   poller(void) {}
   ~poller(void) {}
@@ -1093,7 +1186,7 @@ class poller final : basic {
 using namespace hermes::tools;
 
 // Unix event model.
-// The event object needs to be associated to a file descriptor refering to a
+// The 'event' object needs to be associated to a file descriptor referring to a
 // socket. It allows to store callbacks which must be processed if the socket is
 // ready for a reading or a writting operation.
 // Furthermore, the event model allows to know if we are currently executing a
@@ -1102,7 +1195,7 @@ using namespace hermes::tools;
 // model. Event objects can update their own pollfd structure according the
 // callbacks defined and the potential current execution of one of these
 // callbacks.
-class event final : basic {
+class event final : _default_signatures_ {
  public:
   // Constructs a default event model.
   event(void) : unwatch_(false), pollfd_({-1, 0, 0}) {
@@ -1135,7 +1228,9 @@ class event final : basic {
   // we are waiting for a read operation, or POLLOUT for a read operation
   //
   //  @param:
-  //    - int fd: The file descriptor associated to the detected event.
+  //    - [fd] int representing the file descriptor associated to detected
+  //    event.
+  //
   void update(int fd) {
     if (unwatch_ || (!on_receive_.callback && !on_send_.callback)) return;
 
@@ -1146,7 +1241,11 @@ class event final : basic {
     if (on_receive_.callback && !on_receive_.running) pollfd_.events |= POLLIN;
   }
 
-  // Returns a reference on the pollfd structure.
+  // Returns the pollfd structure.
+  //
+  //  @return value:
+  //    - a reference on struct pollfd.
+  //
   struct pollfd &get_poll_struct(void) {
     return pollfd_;
   }
@@ -1162,27 +1261,30 @@ class event final : basic {
   // Boolean to know if the poller should stop monitoring this file descriptor.
   std::atomic_bool unwatch_;
 
-  //
+  // Structure holding the file descriptor and the event to monitor as well as
+  // the detected event.
   struct pollfd pollfd_;
 
-  // receive callback.
+  // Structure holding the callback to excecute if the file descriptor is ready
+  // for a write operation.
   event_callback_info on_send_;
 
-  // receive callback
+  // Structure holding the callback to execute if the file descriptor is ready
+  // for a read operation.
   event_callback_info on_receive_;
 };
 
 // A Unix polling wrapper.
-// Poller provides an access to polling for any given socket. The poller is
+// Poller provides an access to 'poll()' for any given socket. The poller is
 // using a thread pool as workers to execute the callback provided when the
-// socket is available for the expected event.
+// socket is ready for the expected event.
 // Poller associates the file descriptors of the monitored sockets with 'event'
 // objects to store the callbacks provided. In order to offer an asynchronous
-// I/O model, we are waiting using poll() for one of a set of file descriptors
+// I/O model, we are waiting using 'poll()' for one of a set of file descriptors
 // to become ready to perform an I/O operation.
 // When a file descriptor is ready, a job is enqueued in the thread pool in
-// order to perform the associated callback of this operation.
-class poller final : basic {
+// order to perform the associated callback for this operation.
+class poller final : _default_signatures_ {
  public:
   // Construct an empty polling model.
   poller(void) : stop_(false), socketpair_{-1, -1} {
@@ -1219,7 +1321,10 @@ class poller final : basic {
   // Returns true if the socket is currently monitored.
   //
   // @param
-  //    - a reference on a const socket of type T.
+  //    - [s] a reference on a const socket of type T.
+  //
+  // @return value:
+  //    - boolean.
   //
   template <typename T>
   bool has(const T &s) {
@@ -1231,7 +1336,8 @@ class poller final : basic {
   // event.
   //
   //  @param:
-  //    - a reference on a const socket of type T: The socket to monitor.
+  //    - [socket] a reference on a const socket of type T representing the
+  //    socket to monitor.
   //
   template <typename T>
   void add(const T &socket) {
@@ -1249,11 +1355,12 @@ class poller final : basic {
   // Set a read event to monitor on the given socket.
   //
   // @params:
-  //    - a reference on a const socket of type T: The socket concerned by the
-  //    new registered event.
-  //    - a reference on a const function object which is the callback to
-  //    execute when a send operation has been performed for the specified
+  //    - [s] a reference on a const socket of type T representing the socket
+  //    concerned by a read operation.
+  //    - [c] a reference on a const function object representing the callback
+  //    to execute when a read operation has been performed for the specified
   //    socket.
+  //
   template <typename T>
   void wait_for_read(const T &s, const std::function<void(void)> &c) {
     std::unique_lock<std::mutex> lock(mutex_events_);
@@ -1267,10 +1374,10 @@ class poller final : basic {
   // Set a write event to monitor on the given socket.
   //
   // @params:
-  //    - a reference on a const socket of type T: The socket concerned by the
-  //    new registered event.
-  //    - a reference on a const function object which is the callback to
-  //    execute when a send operation has been performed for the specified
+  //    - [s] a reference on a const socket of type T representing the socket
+  //    concerned by a write operation.
+  //    - [c] a reference on a const function object representing the callback
+  //    to execute when a write operation has been performed for the specified
   //    socket.
   //
   template <typename T>
@@ -1286,8 +1393,8 @@ class poller final : basic {
   // Stop monitoring the given socket.
   //
   //  @param:
-  //    - a reference on a const socket of type T: The socket to stop
-  //    remove from the polling model.
+  //    - [socket] a reference on a const socket of type T representing the
+  //    socket to remove from the polling model.
   //
   template <typename T>
   void remove(const T &socket) {
@@ -1339,9 +1446,11 @@ class poller final : basic {
   // the execution of the dedicated callback to the job queue.
   //
   // @params:
-  //    - int file descriptor associated to the event.
-  //    - object event representing the type of event monitored.
-  //    - short revent: result from poll() for a registered event.
+  //    - [file_descriptor] int representing the file descriptor associated to
+  //    the event.
+  //    - [event] object representing the type of event monitored.
+  //    - [revent] short representing  the result from poll() for a registered
+  //    event.
   //
   void handle_event(int file_descriptor, event &event, short revent) {
     auto fd = file_descriptor;
@@ -1442,7 +1551,7 @@ namespace network {
 namespace tcp {
 
 // TCP client.
-class client final : tools::basic {
+class client final : _default_signatures_ {
  public:
   client(void) : connected_(false), poller_(get_poller()) {}
 
@@ -1525,13 +1634,15 @@ class client final : tools::basic {
   // Connect the client to the given host/port.
   //
   // @params:
-  //  - string host.
-  //  - unsigned int port.
+  //  - [host] a reference on a const string containing the address of the
+  //  remote server that we want to connect.
+  //  - [port] unsigned int representing the port of the remote server that we
+  //  want to connect.
   //
   void connect(const std::string &host, unsigned int port) {
-    if (connected_) {
+    if (is_connected()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " error: The client is already connected.");
+                   "error: The client is already connected.");
     }
 
     socket_.connect(host, port);
@@ -1542,9 +1653,9 @@ class client final : tools::basic {
   // Async send operation.
   //
   //  @params:
-  //    - a reference on a const string: Data to send.
-  //    - a reference on a const async_send_callback: The callback to execute
-  //    when data has been sent.
+  //    - [str] a reference on a const string containing the data to send.
+  //    - [callback] a reference on a const async_send_callback containing the
+  //    callback to execute when data has been sent.
   //
 
   void async_send(const std::string &str, const async_send_callback &callback) {
@@ -1554,15 +1665,16 @@ class client final : tools::basic {
   // Async send operation.
   //
   //  @params:
-  //    - a reference on a const vector of char: Data to send.
-  //    - a reference on a const async_send_callback; The callback to execute
-  //    when data has been sent.
+  //    - [data] a reference on a const vector of char containing the data to
+  //    send.
+  //    - [callback] a reference on a const async_send_callback containing the
+  //    callback to execute when data has been sent.
   //
   void async_send(const std::vector<char> &data,
                   const async_send_callback &callback) {
-    if (!connected_) {
+    if (!is_connected()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: The client must be connected before "
+                   "Invalid operation: The client must be connected before "
                    "being able to perform an asynchronous send of data.");
     }
 
@@ -1580,14 +1692,15 @@ class client final : tools::basic {
   // Async receive operation.
   //
   // @params:
-  //    - std::size_t size to read.
-  //    - a reference on a const async_receive_callback: The callback to execute
-  //    when data has been received.
+  //    - [size] std::size_t representing the number of bytes that we want to
+  //    receive.
+  //    - [callback] a reference on a const async_receive_callback containing
+  //    the callback to execute when data has been received.
   //
   void async_receive(std::size_t size, const async_receive_callback &callback) {
-    if (!connected_) {
+    if (!is_connected()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: The client must be connected before "
+                   "Invalid operation: The client must be connected before "
                    "being able to perform an asynchronous receive of data.");
     }
 
@@ -1604,11 +1717,16 @@ class client final : tools::basic {
 
   // Disconnect the client.
   void disconnect(void) {
-    if (!connected_) return;
+    if (!is_connected()) return;
 
     connected_ = false;
     poller_->remove<tcp::socket>(socket_);
-    socket_.close();
+
+    try {
+      socket_.close();
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+    }
   }
 
  private:
@@ -1635,7 +1753,7 @@ class client final : tools::basic {
 };
 
 // TCP server.
-class server final : basic {
+class server final : _default_signatures_ {
  public:
   server(void) : running_(false), poller_(get_poller()) {}
 
@@ -1667,7 +1785,9 @@ class server final : basic {
   // This function provides a callback that the server stores and will execute
   // on a new connection.
   //
-  // @param: The callback executed when a new client has been accepted.
+  // @param:
+  //    - [callback] a reference on a const function object containing the
+  //    callback to execute when a client is trying to connect to this server.
   //
   void on_connection(
       const std::function<void(const std::shared_ptr<client> &)> &callback) {
@@ -1677,20 +1797,22 @@ class server final : basic {
   // Runs the server on the given host and port.
   //
   // @params:
-  //    - string host.
-  //    - unsigned int port.
+  //    - [host] a reference on a const string containing the address to which
+  //    we wan to run the server.
+  //    - [port] unsigned int representing the port on which we want to run the
+  //    server..
   //
   void run(const std::string &host, unsigned int port) {
-    if (running_) {
+    if (is_running()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: The server is already running.");
+                   "Invalid operation: The server is already running.");
     }
 
     if (!callback_) {
       HERMES_THROW(error::ARGS, __PRETTY_FUNCTION__, __LINE__,
-                   " error: You MUST provide a callback to the server in case "
+                   "error: You MUST provide a callback to the server in case "
                    "of connection using the 'on_connection' member function "
-                   "before running_ the server.");
+                   "before running the server.");
     }
 
     socket_.bind(host, port);
@@ -1703,14 +1825,19 @@ class server final : basic {
 
   // Stop the server.
   void stop(void) {
-    if (!running_) return;
+    if (!is_running()) return;
 
     std::unique_lock<std::mutex> lock(mutex_);
     running_ = false;
     poller_->remove<tcp::socket>(socket_);
-    socket_.close();
-    for (auto &client : clients_) client->disconnect();
-    clients_.clear();
+
+    try {
+      socket_.close();
+      for (auto &client : clients_) client->disconnect();
+      clients_.clear();
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+    }
   }
 
  private:
@@ -1738,7 +1865,7 @@ class server final : basic {
 namespace udp {
 
 // UDP client.
-class client final : basic {
+class client final : _default_signatures_ {
  public:
   client(void) : poller_(get_poller()), broadcast_mode_(false) {}
 
@@ -1785,9 +1912,9 @@ class client final : basic {
   // Initialize the client.
   //
   //@params:
-  //    - string host.
-  //    - unsigned int port.
-  //    - broadcast_mode: set to true to enable broadcast.
+  //    - [host] a reference on a const string containing the host address..
+  //    - [port] unsigned int representing the host port.
+  //    - [broadcast_mode] boolean to enable or disable the broadcast mode.
   //
   void init(const std::string host, unsigned int port, bool broadcast_mode) {
     socket_.init_datagram_socket(host, port, broadcast_mode);
@@ -1798,9 +1925,9 @@ class client final : basic {
   // Asynchronous send of data.
   //
   // @params:
-  //    - a reference on a const string: The data to send.
-  //    - a reference on a const async_send_callback: The callback to execute
-  //    when the data has been sent.
+  //    - [str] a reference on a const string containing the data to sent.
+  //    - [callback] a reference on a const async_send_callback representing the
+  //    callback to execute when the data has been sent.
   //
   void async_send(const std::string &str, const async_send_callback &callback) {
     async_send(std::vector<char>(str.begin(), str.end()), callback);
@@ -1809,13 +1936,14 @@ class client final : basic {
   // Asynchronous send of data.
   //
   // @params:
-  //    - a reference on a const vector of char: Data to send.
-  //    - a reference on a const async_send_callback: The callback to execute
-  //    when the data has been sent.
+  //    - [data] a reference on a const vector of char containing the data to
+  //    sent.
+  //    - [callback] a reference on a const async_send_callback representing the
+  //    callback to execute when the data has been sent.
   //
   void async_send(const std::vector<char> &data,
                   const async_send_callback &callback) {
-    if (broadcast_mode_) {
+    if (broadcast_mode_enabled()) {
       std::cout << "INFO: broadcast mode enabled. Use 'async_broadcast'.\n";
       return;
     }
@@ -1834,9 +1962,9 @@ class client final : basic {
   // Asynchronous broadcast of data.
   //
   // @params:
-  //    - a reference on a const string: Data to broadcast.
-  //    - a reference on a const async_send_callback: The callback to execute
-  //    when the data has been broadcast.
+  //    - [str] a reference on a const string containing the data to broadcast.
+  //    - [callback] a reference on a const async_send_callback representing the
+  //    callback to execute when the data has been broadcasted.
   //
   void async_broadcast(const std::string &str,
                        const async_send_callback &callback) {
@@ -1846,13 +1974,14 @@ class client final : basic {
   // Asynchronous broadcast of data.
   //
   // @params:
-  //    - a reference on a const vector of char: Data to broadcast.
-  //    - a reference on a const async_send_callback: The callback to execute
-  //    when the data has been broadcast.
+  //    - [data] a reference on a const vector of char containing the data to
+  //    broadcast.
+  //    - [callback] a reference on a const async_send_callback representing the
+  //    callback to execute when the data has been broadcasted.
   //
   void async_broadcast(const std::vector<char> &data,
                        const async_send_callback &callback) {
-    if (!broadcast_mode_) {
+    if (!broadcast_mode_enabled()) {
       std::cout << "INFO: broadcast mode disabled. Use 'async_send'.\n";
       return;
     }
@@ -1872,7 +2001,11 @@ class client final : basic {
   void stop(void) {
     broadcast_mode_ = false;
     poller_->remove<udp::socket>(socket_);
-    socket_.close();
+    try {
+      socket_.close();
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+    }
   }
 
  private:
@@ -1893,9 +2026,9 @@ class client final : basic {
 };
 
 // UDP server.
-class server final : basic {
+class server final : _default_signatures_ {
  public:
-  server(void) : bound_(false), poller_(get_poller()), callback_(nullptr) {}
+  server(void) : poller_(get_poller()), callback_(nullptr) {}
 
   ~server(void) { stop(); }
 
@@ -1905,7 +2038,7 @@ class server final : basic {
 
  public:
   // Returns true if the socket is bound, false otherwise.
-  bool is_running(void) const { return bound_; }
+  bool is_running(void) const { return socket_.has_a_name_assigned(); }
 
   // Returns the server's socket.
   const socket &get_socket(void) const { return socket_; }
@@ -1938,11 +2071,12 @@ class server final : basic {
   // Bind the server on the given host/port.
   //
   // @params:
-  //    - string host.
-  //    - unsigned int port.
+  //    - [host] a reference on a const string containing the address to assign
+  //    to the socket.
+  //    - [port] unsigned int representing the port to assign to the socket.
   //
   void bind(const std::string &host, unsigned int port) {
-    if (bound_) {
+    if (socket_.has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
                    " Invalid operation: You need to bind the server before.");
     }
@@ -1951,16 +2085,16 @@ class server final : basic {
     poller_->add<udp::socket>(socket_);
     poller_->wait_for_read<udp::socket>(socket_,
                                         std::bind(&server::on_receive, this));
-    bound_ = true;
   }
 
   // Asynchronous receive of data.
   //
-  // @param: a reference on a const async_receive_callback which will be
-  // executed execute when the receive operation has been performed.
+  // @param:
+  //    - [callback] a reference on a const async_receive_callback representing
+  //    the callback to execute when re te receive operation has been performed.
   //
   void async_recvfrom(const async_receive_callback &callback) {
-    if (!bound_) {
+    if (!socket_.has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
                    " Invalid operation: You need to bind the server before.");
     }
@@ -1974,16 +2108,17 @@ class server final : basic {
 
   // Stop the server.
   void stop(void) {
-    bound_ = false;
     poller_->remove<udp::socket>(socket_);
-    socket_.close();
+    try {
+      socket_.close();
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+    }
   }
 
  private:
   // Server's socket.
   socket socket_;
-
-  std::atomic_bool bound_;
 
   // A smart pointer on the polling instance.
   std::shared_ptr<poller> poller_;
