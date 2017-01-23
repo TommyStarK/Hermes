@@ -983,8 +983,7 @@ class socket final : _default_signatures_ {
                    "Invalid operation: You must bind the socket first.");
     }
 
-    socklen_t len;
-    len = sizeof(source_info_);
+    socklen_t len = sizeof(source_info_);
     int res = ::recvfrom(fd_, incoming.data(), tools::BUFFER_SIZE - 1, 0,
                          (struct sockaddr *)&source_info_, &len);
 
@@ -1627,7 +1626,7 @@ class client final : _default_signatures_ {
 
     if (!success) disconnect();
 
-    if (callback) callback(success, result);
+    if (callback) callback(success, std::move(result));
   }
 
  public:
@@ -2078,7 +2077,7 @@ class server final : _default_signatures_ {
   void bind(const std::string &host, unsigned int port) {
     if (socket_.has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: You need to bind the server before.");
+                   "Invalid operation: You need to bind the server before.");
     }
 
     socket_.bind(host, port);
@@ -2096,7 +2095,7 @@ class server final : _default_signatures_ {
   void async_recvfrom(const async_receive_callback &callback) {
     if (!socket_.has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " Invalid operation: You need to bind the server before.");
+                   "Invalid operation: You need to bind the server before.");
     }
 
     if (callback) {
