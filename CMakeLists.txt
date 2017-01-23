@@ -9,7 +9,7 @@ project(${PROJECT} CXX)
 IF (WIN32)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3 /O2 -coverage")
 ELSE ()
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -Werror -pthread -coverage -g")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -pedantic -pthread -coverage -g -o3")
 ENDIF (WIN32)
 
 include_directories(libs)

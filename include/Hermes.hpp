@@ -61,22 +61,81 @@ static unsigned int const BUFFER_SIZE = 8096;
 static unsigned int const THREADS_NBR = std::thread::hardware_concurrency();
 
 //
-// _default_signatures_ class represents the default signatures for the
+// 'DefaultSignatures' class represents the default signatures for the
 // following:
 //  - Default constructor.
 //  - Copy constructor.
 //  - Move constructor.
 //  - Assignment operator.
 //
-class _default_signatures_ {
+class DefaultSignatures {
  public:
-  _default_signatures_(const _default_signatures_ &) = delete;
+  DefaultSignatures(const DefaultSignatures &) = delete;
 
-  _default_signatures_(const _default_signatures_ &&) = delete;
+  DefaultSignatures(const DefaultSignatures &&) = delete;
 
-  _default_signatures_ &operator=(const _default_signatures_ &) = delete;
+  DefaultSignatures &operator=(const DefaultSignatures &) = delete;
 
-  _default_signatures_() = default;
+  DefaultSignatures() = default;
+};
+
+//
+// The 'logger' class allows to log message according different colour following
+// those types: NORMAL, INFO, DEBUG, WARNING and ERROR.
+//
+class logger final : DefaultSignatures {
+ public:
+  // Represents the type of log.
+  enum type { NORMAL = 0, DEBUG = 1, INFO = 2, WARNING = 3, ERROR = 4 };
+
+  // Returns a reference on a static mutex use synchronize iostream.
+  static std::mutex &mutex() {
+    static std::mutex mutex;
+    return mutex;
+  }
+
+  // Returns a string contraing the following text in green.
+  static std::string info() { return std::string("\x1b[32;1mINFO\x1b[0m: "); }
+  // Returns a string contraing the following text in blue.
+  static std::string debug() { return std::string("\x1b[34;1mDEBUG\x1b[0m: "); }
+  // Returns a string contraing the following text in yellow.
+  static std::string warn() { return std::string("\x1b[33;1mWARNING\x1b[0m:"); }
+  // Returns a string contraing the following text in red.
+  static std::string error() { return std::string("\x1b[31;1mERROR\x1b[0m: "); }
+
+  //
+  // Log function.
+  //
+  // @static:
+  //    - member function specified as 'static', can be used without instanciate
+  //    a 'logger' object.
+  //
+  // @params:
+  //    - [type] enum 'type' representing the type of log.
+  //    - [l] int representing the line.
+  //    - [m] a reference on a const string containing the log.
+  //
+  static void log(type type, int l, const std::string &m) {
+    std::lock_guard<std::mutex> lock(mutex());
+
+    switch (type) {
+      case DEBUG:
+        std::cout << debug() + "(Hermes.hpp:" + std::to_string(l) + ") " + m;
+        break;
+      case INFO:
+        std::cout << info() + "(Hermes.hpp:" + std::to_string(l) + ") " + m;
+        break;
+      case WARNING:
+        std::cout << warn() + " (Hermes.hpp:" + std::to_string(l) + ") " + m;
+        break;
+      case ERROR:
+        std::cerr << error() + "(Hermes.hpp:" + std::to_string(l) + ") " + m;
+        break;
+      default:
+        std::cout << "(Hermes.hpp:" + std::to_string(l) + ") " + m;
+        break;
+    }
+  }
 };
 
 //
@@ -94,7 +153,7 @@ class _default_signatures_ {
 //      RUNTIME = 3  // Should throw an exception of type: std::runtime_error
 //    };
 //
-class error final : _default_signatures_ {
+class error final : DefaultSignatures {
  public:
   error() : errno_(errno) {}
 
@@ -167,10 +226,10 @@ class error final : _default_signatures_ {
 };
 
 // Convenience macro.
-#define HERMES_THROW(type, in, line, message)       \
-  {                                                 \
-    std::cerr << message << std::endl;              \
-    error::require_throws(type, in, line, message); \
+#define HERMES_THROW(type, in, line, message)    \
+  {                                              \
+    std::string msg = logger::error() + message; \
+    error::require_throws(type, in, line, msg);  \
   }
 
 //
@@ -178,7 +237,7 @@ class error final : _default_signatures_ {
 // just before returning from the current function block. The callback required
 // to construct a 'defer' object will be executed when the object is destroyed.
 //
-class defer final : _default_signatures_ {
+class defer final : DefaultSignatures {
  public:
   defer(const std::function<void(void)> &callback) : callback_(callback) {}
 
@@ -198,7 +257,7 @@ class defer final : _default_signatures_ {
 // A signal wrapper, it allows to block the thread calling until the specified
 // signal is caught.
 //
-class signal final : _default_signatures_ {
+class signal final : DefaultSignatures {
  public:
   // Returns a reference on a static mutex, used to build the unique_lock to
   // lock the thread.
@@ -243,7 +302,7 @@ class signal final : _default_signatures_ {
 // the synchronized queue. The workers start working and waiting for jobs as
 // soon as the 'workers' object is constructed.
 //
-class workers final : _default_signatures_ {
+class workers final : DefaultSignatures {
  public:
   // Constructor.
   //
@@ -255,12 +314,12 @@ class workers final : _default_signatures_ {
     // Check the number of concurrent threads supported by the system.
     if (workers_nbr > std::thread::hardware_concurrency()) {
       HERMES_THROW(error::ARGS, __PRETTY_FUNCTION__, __LINE__,
-                   " error: Number of 'workers' is greater than the number of "
+                   "Number of 'workers' is greater than the number of "
                    "concurrent hreads supported by the system.");
     }
 
     // Start the workers.
-    for (unsigned int i = 0; i < workers_nbr; ++i)
+    for (unsigned int i = 0; i < workers_nbr; ++i) {
       workers_.push_back(std::thread([this]() {
         // Worker routine:
         // Each worker is waiting for a new job. The first worker that can
@@ -269,10 +328,14 @@ class workers final : _default_signatures_ {
         // We loop waiting for a new job.
         while (!stop_) {
           auto job = retrieve_job();
-          if (job) job();
+
+          if (job) {
+            job();
+          }
         }
 
       }));
+    }
   }
 
   ~workers(void) { stop(); }
@@ -290,9 +353,10 @@ class workers final : _default_signatures_ {
   //
   void enqueue_job(const std::function<void(void)> &new_job) {
     if (!new_job) {
-      std::cout << "WARNING: Passing nullptr instead of const "
-                   "std::function<void(void)> &.\n";
-      return;
+      return logger::log(logger::WARNING, __LINE__,
+                         "Passing nullptr instead of a reference on a const "
+                         "function object containing the new job to "
+                         "enqueue.\n");
     }
 
     std::unique_lock<std::mutex> lock(mutex_job_queue_);
@@ -302,11 +366,17 @@ class workers final : _default_signatures_ {
 
   // Stop the thread pool.
   void stop(void) {
-    if (stop_) return;
+    if (stop_) {
+      return;
+    }
 
     stop_ = true;
     condition_.notify_all();
-    for (auto &worker : workers_) worker.join();
+
+    for (auto &worker : workers_) {
+      worker.join();
+    }
+
     workers_.clear();
   }
 
@@ -318,7 +388,9 @@ class workers final : _default_signatures_ {
 
     condition_.wait(lock, [&] { return stop_ || !job_queue_.empty(); });
 
-    if (job_queue_.empty()) return nullptr;
+    if (job_queue_.empty()) {
+      return nullptr;
+    }
 
     auto job = std::move(job_queue_.front());
     job_queue_.pop();
@@ -354,7 +426,7 @@ namespace tcp {
 
 // Windows tcp socket.
 // Provides blocking stream-oriented socket functionalities.
-class socket final : _default_signatures_ {
+class socket final : DefaultSignatures {
  public:
   socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
 
@@ -426,7 +498,7 @@ class socket final : _default_signatures_ {
 
 // Unix tcp socket.
 // Provides blocking stream-oriented socket functionalities.
-class socket final : _default_signatures_ {
+class socket final : DefaultSignatures {
  public:
   // Basic constructor.
   socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
@@ -476,8 +548,8 @@ class socket final : _default_signatures_ {
   //
   void bind(const std::string &host, unsigned int port) {
     if (has_a_name_assigned()) {
-      std::cout << "WARNING: An address is already assigned to this socket.\n";
-      return;
+      return logger::log(logger::WARNING, __LINE__,
+                         "An address is already assigned to this socket.\n");
     }
 
     int yes = 1;
@@ -487,12 +559,12 @@ class socket final : _default_signatures_ {
 
     if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: setsockopt() failed.");
+                   "setsockopt() failed.");
     }
 
     if (::bind(fd_, info_->ai_addr, info_->ai_addrlen) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: bind() failed.");
+                   "bind() failed.");
     }
 
     has_a_name_assigned_ = true;
@@ -505,19 +577,20 @@ class socket final : _default_signatures_ {
   void listen(unsigned int backlog = BACKLOG) {
     if (!has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: Use the member function 'bind' before "
-                   "using 'listen' to mark the socket as passive.");
+                   "Use the member function 'bind' before using 'listen' to "
+                   "mark the socket as passive.");
     }
 
     if (backlog > SOMAXCONN) {
-      std::cout << "Param backlog greater than SOMAXCONN.\nPlease refer to the";
-      std::cout << " value in /proc/sys/net/core/somaxconn. Param backlog will";
-      std::cout << " be truncated.\n";
+      logger::log(logger::INFO, __LINE__,
+                  "Param backlog greater than SOMAXCONN.\nPlease refer to the "
+                  "value in /proc/sys/net/core/somaxconn. Param backlog will "
+                  "be truncated.\n");
     }
 
     if (::listen(fd_, backlog) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: listen() failed.");
+                   "listen() failed.");
     }
   }
 
@@ -532,8 +605,8 @@ class socket final : _default_signatures_ {
 
     if (fd_ == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: Use the member functions 'bind' then "
-                   "'listen' before accepting a new connection.");
+                   "Use the member functions 'bind' then 'listen' before "
+                   "accepting a new connection.");
     }
 
     socklen_t size = sizeof(client);
@@ -541,7 +614,7 @@ class socket final : _default_signatures_ {
 
     if (new_fd == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: accept() failed.");
+                   "accept() failed.");
     }
 
     int res = getnameinfo((struct sockaddr *)&client, size, host, sizeof(host),
@@ -549,7 +622,7 @@ class socket final : _default_signatures_ {
 
     if (res != 0) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: getnameinfo() failed.");
+                   "getnameinfo() failed.");
     }
 
     return {new_fd, std::string(host), (unsigned int)std::stoi(port)};
@@ -570,8 +643,8 @@ class socket final : _default_signatures_ {
   void connect(const std::string &host, unsigned int port) {
     if (has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: You cannot connect to a remote server, "
-                   "a socket set for a server application.");
+                   "You cannot connect to a remote server, a socket set for a "
+                   "server application.");
     }
 
     create_socket(host, port);
@@ -580,7 +653,7 @@ class socket final : _default_signatures_ {
 
     if (::connect(fd_, info_->ai_addr, info_->ai_addrlen) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: connect() failed.");
+                   "connect() failed.");
     }
   }
 
@@ -605,15 +678,15 @@ class socket final : _default_signatures_ {
   std::size_t send(const std::vector<char> &message, std::size_t message_len) {
     if (fd_ == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: Use the member function 'connect' to "
-                   "connect to a remote server before sending data.");
+                   "Use the member function 'connect' to connect to a remote "
+                   "server before sending data.");
     }
 
     int res = ::send(fd_, message.data(), message_len, 0);
 
     if (res == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: send() failed.");
+                   "send() failed.");
     }
 
     return res;
@@ -631,8 +704,8 @@ class socket final : _default_signatures_ {
   std::vector<char> receive(std::size_t size_to_read = BUFFER_SIZE) {
     if (fd_ == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: Use the member function 'connect' to "
-                   "connect to a remote server before receiving data.");
+                   "Use the member function 'connect' to connect to a remote "
+                   "server before receiving data.");
     }
 
     std::vector<char> buffer(size_to_read, 0);
@@ -643,10 +716,11 @@ class socket final : _default_signatures_ {
     switch (bytes_read) {
       case -1:
         HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                     "error: recv() failed.");
+                     "recv() failed.");
         break;
       case 0:
-        std::cout << "INFO: Connection closed by the remote host.\n";
+        logger::log(logger::INFO, __LINE__,
+                    "Connection closed by the remote host.\n");
         close();
         break;
       default:
@@ -672,7 +746,7 @@ class socket final : _default_signatures_ {
 
       if (::close(fd_) == -1) {
         HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                     "error: close() failed.");
+                     "close() failed.");
       }
     }
   }
@@ -686,7 +760,9 @@ class socket final : _default_signatures_ {
   //      - [port] unsigned int representing the port of a remote host.
   //
   void create_socket(const std::string &host, unsigned int port) {
-    if (fd_ != -1) return;
+    if (fd_ != -1) {
+      return;
+    }
 
     struct addrinfo hints;
     ::memset(&hints, 0, sizeof(hints));
@@ -698,19 +774,22 @@ class socket final : _default_signatures_ {
 
     if (res != 0) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: getaddrinfo() failed.");
+                   "getaddrinfo() failed.");
     }
 
     for (auto p = info_; p != NULL; p = p->ai_next) {
-      if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
+      if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) ==
+          -1) {
         continue;
+      }
+
       info_ = p;
       break;
     }
 
     if (fd_ == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: socket() failed.");
+                   "socket() failed.");
     }
 
     host_ = host;
@@ -744,7 +823,7 @@ namespace udp {
 
 // Windows udp socket.
 // Provides synchronous datagram-oriented socket functionality.
-class socket final : _default_signatures_ {
+class socket final : DefaultSignatures {
  public:
   socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
 
@@ -818,7 +897,7 @@ class socket final : _default_signatures_ {
 
 // Unix udp socket.
 // Provides synchronous datagram-oriented socket functionality.
-class socket final : _default_signatures_ {
+class socket final : DefaultSignatures {
  public:
   socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
 
@@ -854,10 +933,11 @@ class socket final : _default_signatures_ {
   //
   void init_datagram_socket(const std::string &host, unsigned int port,
                             bool broadcasting) {
-    if (!broadcasting)
+    if (!broadcasting) {
       create_socket(host, port);
-    else
+    } else {
       create_broadcaster(host, port);
+    }
   }
 
   // Send data to another socket.
@@ -885,7 +965,7 @@ class socket final : _default_signatures_ {
   std::size_t sendto(const std::vector<char> &data, std::size_t size) {
     if (fd_ == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: Datagram socket not Initialized.");
+                   "Datagram socket not Initialized.");
     }
 
     int res =
@@ -893,7 +973,7 @@ class socket final : _default_signatures_ {
 
     if (res == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: sendto() failed.");
+                   "sendto() failed.");
     }
 
     return res;
@@ -924,7 +1004,7 @@ class socket final : _default_signatures_ {
   std::size_t broadcast(const std::vector<char> &data, std::size_t size) {
     if (fd_ == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: Datagram socket not Initialized.");
+                   "Datagram socket not Initialized.");
     }
 
     int res =
@@ -933,7 +1013,7 @@ class socket final : _default_signatures_ {
 
     if (res == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "error: sendto() failed.");
+                   "sendto() failed.");
     }
 
     return res;
@@ -952,8 +1032,8 @@ class socket final : _default_signatures_ {
   //
   void bind(const std::string &host, unsigned int port) {
     if (has_a_name_assigned()) {
-      std::cout << "WARNING: Address already assigned to the socket.\n";
-      return;
+      return logger::log(logger::WARNING, __LINE__,
+                         "Address already assigned to the socket.\n");
     }
 
     create_socket(host, port);
@@ -962,7 +1042,7 @@ class socket final : _default_signatures_ {
 
     if (::bind(fd_, info_->ai_addr, info_->ai_addrlen) == -1) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   " error: sendto() failed.");
+                   "sendto() failed.");
     }
 
     has_a_name_assigned_ = true;
@@ -980,7 +1060,7 @@ class socket final : _default_signatures_ {
   std::size_t recvfrom(std::vector<char> &incoming) {
     if (!has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: You must bind the socket first.");
+                   "You must bind the socket first.");
     }
 
     socklen_t len = sizeof(source_info_);
@@ -989,7 +1069,7 @@ class socket final : _default_signatures_ {
 
     if (res == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: recvfrom() failed.");
+                   "recvfrom() failed.");
     }
 
     return res;
@@ -1011,7 +1091,7 @@ class socket final : _default_signatures_ {
     if (fd_ != -1) {
       if (::close(fd_) == -1) {
         HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                     "error: close() failed.");
+                     "close() failed.");
       }
     }
   }
@@ -1024,7 +1104,9 @@ class socket final : _default_signatures_ {
   //      - [port] unsigned int representing a port.
   //
   void create_socket(const std::string &host, unsigned int port) {
-    if (fd_ != -1) return;
+    if (fd_ != -1) {
+      return;
+    }
 
     struct addrinfo hints;
     ::memset(&hints, 0, sizeof(hints));
@@ -1039,7 +1121,7 @@ class socket final : _default_signatures_ {
 
     if (status != 0) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: getaddrinfo() failed.");
+                   "getaddrinfo() failed.");
     }
 
     for (auto p = info_; p != NULL; p = p->ai_next) {
@@ -1054,7 +1136,7 @@ class socket final : _default_signatures_ {
 
     if (fd_ == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: getaddrinfo() failed.");
+                   "getaddrinfo() failed.");
     }
 
     host_ = host;
@@ -1068,24 +1150,26 @@ class socket final : _default_signatures_ {
   //      - [port] unsigned int representing a port.
   //&
   void create_broadcaster(const std::string &host, unsigned int port) {
-    if (fd_ != -1) return;
+    if (fd_ != -1) {
+      return;
+    }
 
     int b = 1;
     struct hostent *hostent;
 
     if ((hostent = ::gethostbyname(host.c_str())) == NULL) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: gethostbyname() failed.");
+                   "gethostbyname() failed.");
     }
 
     if ((fd_ = ::socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: socket() failed.");
+                   "socket() failed.");
     }
 
     if (::setsockopt(fd_, SOL_SOCKET, SO_BROADCAST, &b, sizeof(int)) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   "error: setsockopt() failed.");
+                   "setsockopt() failed.");
     }
 
     host_ = host;
@@ -1127,14 +1211,14 @@ class socket final : _default_signatures_ {
 #ifdef _WIN32
 
 // Windows event model.
-class event final : _default_signatures_ {
+class event final : DefaultSignatures {
  public:
   event(void) {}
   ~event(void) = default;
 };
 
 // A Windows polling wrapper.
-class poller final : _default_signatures_ {
+class poller final : DefaultSignatures {
  public:
   poller(void) {}
   ~poller(void) {}
@@ -1194,7 +1278,7 @@ using namespace hermes::tools;
 // model. Event objects can update their own pollfd structure according the
 // callbacks defined and the potential current execution of one of these
 // callbacks.
-class event final : _default_signatures_ {
+class event final : DefaultSignatures {
  public:
   // Constructs a default event model.
   event(void) : unwatch_(false), pollfd_({-1, 0, 0}) {
@@ -1231,13 +1315,19 @@ class event final : _default_signatures_ {
   //    event.
   //
   void update(int fd) {
-    if (unwatch_ || (!on_receive_.callback && !on_send_.callback)) return;
+    if (unwatch_ || (!on_receive_.callback && !on_send_.callback)) {
+      return;
+    }
 
     pollfd_.fd = fd;
 
-    if (on_send_.callback && !on_send_.running) pollfd_.events |= POLLOUT;
+    if (on_send_.callback && !on_send_.running) {
+      pollfd_.events |= POLLOUT;
+    }
 
-    if (on_receive_.callback && !on_receive_.running) pollfd_.events |= POLLIN;
+    if (on_receive_.callback && !on_receive_.running) {
+      pollfd_.events |= POLLIN;
+    }
   }
 
   // Returns the pollfd structure.
@@ -1283,13 +1373,13 @@ class event final : _default_signatures_ {
 // to become ready to perform an I/O operation.
 // When a file descriptor is ready, a job is enqueued in the thread pool in
 // order to perform the associated callback for this operation.
-class poller final : _default_signatures_ {
+class poller final : DefaultSignatures {
  public:
   // Construct an empty polling model.
   poller(void) : stop_(false), socketpair_{-1, -1} {
     if (::socketpair(AF_UNIX, SOCK_STREAM, 0, socketpair_) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
-                   " error: socketpair() failed.");
+                   "socketpair() failed.");
     }
 
     poll_master_ = std::thread([this]() {
@@ -1297,8 +1387,9 @@ class poller final : _default_signatures_ {
         synchronize_events();
 
         if (::poll(const_cast<struct pollfd *>(poll_structs_.data()),
-                   poll_structs_.size(), TIMEOUT) > 0)
+                   poll_structs_.size(), TIMEOUT) > 0) {
           process_detected_events();
+        }
       }
     });
   }
@@ -1399,7 +1490,9 @@ class poller final : _default_signatures_ {
   void remove(const T &socket) {
     std::unique_lock<std::mutex> lock(mutex_events_);
 
-    if (events_.find(socket.get_fd()) == events_.end()) return;
+    if (events_.find(socket.get_fd()) == events_.end()) {
+      return;
+    }
 
     auto &target = events_[socket.get_fd()];
 
@@ -1457,26 +1550,31 @@ class poller final : _default_signatures_ {
     auto callback =
         pollin ? event.on_receive_.callback : event.on_send_.callback;
 
-    if (pollin)
+    if (pollin) {
       event.on_receive_.running = true;
-    else
+    } else {
       event.on_send_.running = true;
+    }
 
     workers_.enqueue_job([=]() {
       callback();
       std::unique_lock<std::mutex> lock(mutex_events_);
-      if (events_.find(fd) == events_.end()) return;
+      if (events_.find(fd) == events_.end()) {
+        return;
+      }
 
       auto &event = events_.find(fd)->second;
 
       if (pollin) {
         event.on_receive_.running = false;
-        if (event.unwatch_ && !event.on_send_.running)
+        if (event.unwatch_ && !event.on_send_.running) {
           events_.erase(events_.find(fd));
+        }
       } else {
         event.on_send_.running = false;
-        if (event.unwatch_ && !event.on_receive_.running)
+        if (event.unwatch_ && !event.on_receive_.running) {
           events_.erase(events_.find(fd));
+        }
       }
     });
   }
@@ -1491,17 +1589,21 @@ class poller final : _default_signatures_ {
         continue;
       }
 
-      if (events_.find(result.fd) == events_.end()) continue;
+      if (events_.find(result.fd) == events_.end()) {
+        continue;
+      }
 
       auto &socket = events_.find(result.fd)->second;
 
       if (result.revents & POLLOUT && socket.on_send_.callback &&
-          !socket.on_send_.running)
+          !socket.on_send_.running) {
         handle_event(result.fd, socket, result.revents);
+      }
 
       if (result.revents & POLLIN && socket.on_receive_.callback &&
-          !socket.on_receive_.running)
+          !socket.on_receive_.running) {
         handle_event(result.fd, socket, result.revents);
+      }
     }
   }
 
@@ -1541,7 +1643,9 @@ void set_poller(const std::shared_ptr<poller> &s) { poller_g = s; }
 
 // Getter poller instance.
 const std::shared_ptr<poller> &get_poller(void) {
-  if (!poller_g) poller_g = std::make_shared<poller>();
+  if (!poller_g) {
+    poller_g = std::make_shared<poller>();
+  }
   return poller_g;
 }
 
@@ -1550,7 +1654,7 @@ namespace network {
 namespace tcp {
 
 // TCP client.
-class client final : _default_signatures_ {
+class client final : DefaultSignatures {
  public:
   client(void) : connected_(false), poller_(get_poller()) {}
 
@@ -1579,7 +1683,9 @@ class client final : _default_signatures_ {
   void on_send(void) {
     std::unique_lock<std::mutex> lock(send_requests_mutex_);
 
-    if (send_requests_.empty()) return;
+    if (send_requests_.empty()) {
+      return;
+    }
 
     bool success = false;
     std::size_t result = 0;
@@ -1597,16 +1703,22 @@ class client final : _default_signatures_ {
 
     send_requests_.pop();
 
-    if (!success) disconnect();
+    if (!success) {
+      disconnect();
+    }
 
-    if (callback) callback(success, result);
+    if (callback) {
+      callback(success, result);
+    }
   }
 
   // Receive callback.
   void on_receive(void) {
     std::unique_lock<std::mutex> lock(receive_requests_mutex_);
 
-    if (receive_requests_.empty()) return;
+    if (receive_requests_.empty()) {
+      return;
+    }
 
     bool success = false;
     std::vector<char> result;
@@ -1624,9 +1736,13 @@ class client final : _default_signatures_ {
 
     receive_requests_.pop();
 
-    if (!success) disconnect();
+    if (!success) {
+      disconnect();
+    }
 
-    if (callback) callback(success, std::move(result));
+    if (callback) {
+      callback(success, std::move(result));
+    }
   }
 
  public:
@@ -1641,7 +1757,7 @@ class client final : _default_signatures_ {
   void connect(const std::string &host, unsigned int port) {
     if (is_connected()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "error: The client is already connected.");
+                   "The client is already connected.");
     }
 
     socket_.connect(host, port);
@@ -1673,8 +1789,8 @@ class client final : _default_signatures_ {
                   const async_send_callback &callback) {
     if (!is_connected()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: The client must be connected before "
-                   "being able to perform an asynchronous send of data.");
+                   "The client must be connected before being able to perform "
+                   "an asynchronous send of data.");
     }
 
     std::unique_lock<std::mutex> lock(send_requests_mutex_);
@@ -1684,7 +1800,7 @@ class client final : _default_signatures_ {
       poller_->wait_for_write<tcp::socket>(socket_,
                                            std::bind(&client::on_send, this));
     } else {
-      std::cout << "WARNING: You must provide a callback\n";
+      logger::log(logger::WARNING, __LINE__, "You must provide a callback\n");
     }
   }
 
@@ -1699,8 +1815,8 @@ class client final : _default_signatures_ {
   void async_receive(std::size_t size, const async_receive_callback &callback) {
     if (!is_connected()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: The client must be connected before "
-                   "being able to perform an asynchronous receive of data.");
+                   "The client must be connected before being able to perform "
+                   "an asynchronous receive of data.");
     }
 
     std::unique_lock<std::mutex> lock(receive_requests_mutex_);
@@ -1710,13 +1826,15 @@ class client final : _default_signatures_ {
       poller_->wait_for_read<tcp::socket>(socket_,
                                           std::bind(&client::on_receive, this));
     } else {
-      std::cout << "WARNING: You must provide a callback\n";
+      logger::log(logger::WARNING, __LINE__, "You must provide a callback\n");
     }
   }
 
   // Disconnect the client.
   void disconnect(void) {
-    if (!is_connected()) return;
+    if (!is_connected()) {
+      return;
+    }
 
     connected_ = false;
     poller_->remove<tcp::socket>(socket_);
@@ -1752,7 +1870,7 @@ class client final : _default_signatures_ {
 };
 
 // TCP server.
-class server final : _default_signatures_ {
+class server final : DefaultSignatures {
  public:
   server(void) : running_(false), poller_(get_poller()) {}
 
@@ -1772,7 +1890,9 @@ class server final : _default_signatures_ {
 
     try {
       auto new_client = std::make_shared<client>(socket_.accept());
-      if (callback_) callback_(new_client);
+      if (callback_) {
+        callback_(new_client);
+      }
       clients_.insert(new_client);
     } catch (const std::exception &e) {
       std::cerr << e.what() << std::endl;
@@ -1804,13 +1924,13 @@ class server final : _default_signatures_ {
   void run(const std::string &host, unsigned int port) {
     if (is_running()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: The server is already running.");
+                   "The server is already running.");
     }
 
     if (!callback_) {
       HERMES_THROW(error::ARGS, __PRETTY_FUNCTION__, __LINE__,
-                   "error: You MUST provide a callback to the server in case "
-                   "of connection using the 'on_connection' member function "
+                   "You MUST provide a callback to the server in case of "
+                   "connection using the 'on_connection' member function "
                    "before running the server.");
     }
 
@@ -1824,7 +1944,9 @@ class server final : _default_signatures_ {
 
   // Stop the server.
   void stop(void) {
-    if (!is_running()) return;
+    if (!is_running()) {
+      return;
+    }
 
     std::unique_lock<std::mutex> lock(mutex_);
     running_ = false;
@@ -1832,7 +1954,9 @@ class server final : _default_signatures_ {
 
     try {
       socket_.close();
-      for (auto &client : clients_) client->disconnect();
+      for (auto &client : clients_) {
+        client->disconnect();
+      }
       clients_.clear();
     } catch (const std::exception &e) {
       std::cerr << e.what() << std::endl;
@@ -1864,7 +1988,7 @@ class server final : _default_signatures_ {
 namespace udp {
 
 // UDP client.
-class client final : _default_signatures_ {
+class client final : DefaultSignatures {
  public:
   client(void) : poller_(get_poller()), broadcast_mode_(false) {}
 
@@ -1886,7 +2010,9 @@ class client final : _default_signatures_ {
   void on_send(void) {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    if (send_requests_.empty()) return;
+    if (send_requests_.empty()) {
+      return;
+    }
 
     int result = -1;
     auto request = send_requests_.front();
@@ -1894,17 +2020,20 @@ class client final : _default_signatures_ {
     auto callback = request.second;
 
     try {
-      if (broadcast_mode_)
+      if (broadcast_mode_) {
         result = socket_.broadcast(buffer, buffer.size());
-      else
+      } else {
         result = socket_.sendto(buffer, buffer.size());
+      }
     } catch (const std::exception &e) {
       std::cerr << e.what() << std::endl;
     }
 
     send_requests_.pop();
 
-    if (callback) callback(result);
+    if (callback) {
+      callback(result);
+    }
   }
 
  public:
@@ -1943,8 +2072,8 @@ class client final : _default_signatures_ {
   void async_send(const std::vector<char> &data,
                   const async_send_callback &callback) {
     if (broadcast_mode_enabled()) {
-      std::cout << "INFO: broadcast mode enabled. Use 'async_broadcast'.\n";
-      return;
+      return logger::log(logger::INFO, __LINE__,
+                         "Broadcast mode enabled. Use 'async_broadcast'.\n");
     }
 
     std::unique_lock<std::mutex> lock(mutex_);
@@ -1954,7 +2083,7 @@ class client final : _default_signatures_ {
       poller_->wait_for_write<udp::socket>(socket_,
                                            std::bind(&client::on_send, this));
     } else {
-      std::cout << "WARNING: You must provide a callback\n";
+      logger::log(logger::WARNING, __LINE__, "You must provide a callback\n");
     }
   }
 
@@ -1981,8 +2110,8 @@ class client final : _default_signatures_ {
   void async_broadcast(const std::vector<char> &data,
                        const async_send_callback &callback) {
     if (!broadcast_mode_enabled()) {
-      std::cout << "INFO: broadcast mode disabled. Use 'async_send'.\n";
-      return;
+      return logger::log(logger::INFO, __LINE__,
+                         "Broadcast mode disabled. Use 'async_send'.\n");
     }
 
     std::unique_lock<std::mutex> lock(mutex_);
@@ -2025,7 +2154,7 @@ class client final : _default_signatures_ {
 };
 
 // UDP server.
-class server final : _default_signatures_ {
+class server final : DefaultSignatures {
  public:
   server(void) : poller_(get_poller()), callback_(nullptr) {}
 
@@ -2077,7 +2206,7 @@ class server final : _default_signatures_ {
   void bind(const std::string &host, unsigned int port) {
     if (socket_.has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: You need to bind the server before.");
+                   "You need to bind the server before.");
     }
 
     socket_.bind(host, port);
@@ -2095,13 +2224,13 @@ class server final : _default_signatures_ {
   void async_recvfrom(const async_receive_callback &callback) {
     if (!socket_.has_a_name_assigned()) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
-                   "Invalid operation: You need to bind the server before.");
+                   "You need to bind the server before.");
     }
 
     if (callback) {
       callback_ = callback;
     } else {
-      std::cout << "WARNING: You must provide a callback\n";
+      logger::log(logger::WARNING, __LINE__, "You must provide a callback\n");
     }
   }
 
