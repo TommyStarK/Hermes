@@ -1,0 +1,5 @@
+2017-06-02 Version 1.0.0 (Linux)
+
+General:
+  - First release.
+  - Unix TCP/UDP server and client.

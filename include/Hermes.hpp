@@ -2,6 +2,7 @@
 
 #ifdef _WIN32
 #include <WinSock2.h>
+#include <Windows.h>
 #define UNUSED(x) __pragma(warning(suppress : 4100)) x
 #else
 #include <arpa/inet.h>
@@ -34,6 +35,13 @@
 namespace hermes {
 
 namespace tools {
+// Defines an invalid file descriptor.
+#ifdef _WIN32
+#define INVALID INVALID_SOCKET
+#else
+#define INVALID -1
+#endif
+
 // Feel free to modify any value of the following variables to fit to your
 // needs:
 //
@@ -399,7 +407,7 @@ class workers final : DefaultSignatures {
 
  private:
   // Boolean to know if the workers should stop working.
-  std::atomic_bool stop_;
+  std::atomic<bool> stop_ = ATOMIC_VAR_INIT(false);
 
   // Mutex to synchronize the queue.
   std::mutex mutex_job_queue_;
@@ -428,7 +436,8 @@ namespace tcp {
 // Provides blocking stream-oriented socket functionalities.
 class socket final : DefaultSignatures {
  public:
-  socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
+  socket(void)
+      : fd_(INVALID), host_(""), port_(0), has_a_name_assigned_(false) {}
 
   socket(SOCKET fd, const std::string &host, unsigned int port)
       : fd_(fd), host_(host), port_(port), has_a_name_assigned_(false) {}
@@ -501,7 +510,8 @@ class socket final : DefaultSignatures {
 class socket final : DefaultSignatures {
  public:
   // Basic constructor.
-  socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
+  socket(void)
+      : fd_(INVALID), host_(""), port_(0), has_a_name_assigned_(false) {}
 
   // Create a socket from an existing file descriptor.
   socket(int fd, const std::string &host, unsigned int port)
@@ -513,7 +523,7 @@ class socket final : DefaultSignatures {
         host_(socket.get_host()),
         port_(socket.get_port()),
         has_a_name_assigned_(false) {
-    socket.fd_ = -1;
+    socket.fd_ = INVALID;
   }
 
   // Comparison operator.
@@ -603,7 +613,7 @@ class socket final : DefaultSignatures {
     char port[NI_MAXSERV];
     struct sockaddr_storage client;
 
-    if (fd_ == -1) {
+    if (fd_ == INVALID) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
                    "Use the member functions 'bind' then 'listen' before "
                    "accepting a new connection.");
@@ -612,7 +622,7 @@ class socket final : DefaultSignatures {
     socklen_t size = sizeof(client);
     int new_fd = ::accept(fd_, (struct sockaddr *)&client, &size);
 
-    if (new_fd == -1) {
+    if (new_fd == INVALID) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
                    "accept() failed.");
     }
@@ -676,7 +686,7 @@ class socket final : DefaultSignatures {
   //    - [message_len] std::size_t representing the size of the message.
   //
   std::size_t send(const std::vector<char> &message, std::size_t message_len) {
-    if (fd_ == -1) {
+    if (fd_ == INVALID) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
                    "Use the member function 'connect' to connect to a remote "
                    "server before sending data.");
@@ -702,7 +712,7 @@ class socket final : DefaultSignatures {
   //   - A vector of char containing the data received.
   //
   std::vector<char> receive(std::size_t size_to_read = BUFFER_SIZE) {
-    if (fd_ == -1) {
+    if (fd_ == INVALID) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
                    "Use the member function 'connect' to connect to a remote "
                    "server before receiving data.");
@@ -719,8 +729,7 @@ class socket final : DefaultSignatures {
                      "recv() failed.");
         break;
       case 0:
-        logger::log(logger::INFO, __LINE__,
-                    "Connection closed by the remote host.\n");
+        std::cerr << logger::info() + "Connection closed by the remote host.\n";
         close();
         break;
       default:
@@ -736,9 +745,9 @@ class socket final : DefaultSignatures {
 
   // Close the file descriptor associated to the socket and reset the socket.
   void close(void) {
-    if (fd_ != -1) {
+    if (fd_ != INVALID) {
       defer that([this] {
-        fd_ = -1;
+        fd_ = INVALID;
         host_ = "";
         port_ = 0;
         has_a_name_assigned_ = false;
@@ -760,7 +769,7 @@ class socket final : DefaultSignatures {
   //      - [port] unsigned int representing the port of a remote host.
   //
   void create_socket(const std::string &host, unsigned int port) {
-    if (fd_ != -1) {
+    if (fd_ != INVALID) {
       return;
     }
 
@@ -787,7 +796,7 @@ class socket final : DefaultSignatures {
       break;
     }
 
-    if (fd_ == -1) {
+    if (fd_ == INVALID) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
                    "socket() failed.");
     }
@@ -825,7 +834,8 @@ namespace udp {
 // Provides synchronous datagram-oriented socket functionality.
 class socket final : DefaultSignatures {
  public:
-  socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
+  socket(void)
+      : fd_(INVALID), host_(""), port_(0), has_a_name_assigned_(false) {}
 
   socket(SOCKET fd, const std::string &host, unsigned int port)
       : fd_(fd), host_(host), port_(port), has_a_name_assigned_(false) {}
@@ -899,7 +909,8 @@ class socket final : DefaultSignatures {
 // Provides synchronous datagram-oriented socket functionality.
 class socket final : DefaultSignatures {
  public:
-  socket(void) : fd_(-1), host_(""), port_(0), has_a_name_assigned_(false) {}
+  socket(void)
+      : fd_(INVALID), host_(""), port_(0), has_a_name_assigned_(false) {}
 
   bool operator==(const socket &s) const { return fd_ == s.get_fd(); }
 
@@ -963,7 +974,7 @@ class socket final : DefaultSignatures {
   //    - std::size_t: bytes sent.
   //
   std::size_t sendto(const std::vector<char> &data, std::size_t size) {
-    if (fd_ == -1) {
+    if (fd_ == INVALID) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
                    "Datagram socket not Initialized.");
     }
@@ -1002,7 +1013,7 @@ class socket final : DefaultSignatures {
   //    - std::size_t: bytes broadcasted.
   //
   std::size_t broadcast(const std::vector<char> &data, std::size_t size) {
-    if (fd_ == -1) {
+    if (fd_ == INVALID) {
       HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
                    "Datagram socket not Initialized.");
     }
@@ -1082,13 +1093,13 @@ class socket final : DefaultSignatures {
   // Close the file descriptor associated to the socket.
   void close(void) {
     defer that([this] {
-      fd_ = -1;
+      fd_ = INVALID;
       host_ = "";
       port_ = 0;
       has_a_name_assigned_ = false;
     });
 
-    if (fd_ != -1) {
+    if (fd_ != INVALID) {
       if (::close(fd_) == -1) {
         HERMES_THROW(error::LOGIC, __PRETTY_FUNCTION__, __LINE__,
                      "close() failed.");
@@ -1104,7 +1115,7 @@ class socket final : DefaultSignatures {
   //      - [port] unsigned int representing a port.
   //
   void create_socket(const std::string &host, unsigned int port) {
-    if (fd_ != -1) {
+    if (fd_ != INVALID) {
       return;
     }
 
@@ -1134,7 +1145,7 @@ class socket final : DefaultSignatures {
       break;
     }
 
-    if (fd_ == -1) {
+    if (fd_ == INVALID) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
                    "getaddrinfo() failed.");
     }
@@ -1150,7 +1161,7 @@ class socket final : DefaultSignatures {
   //      - [port] unsigned int representing a port.
   //&
   void create_broadcaster(const std::string &host, unsigned int port) {
-    if (fd_ != -1) {
+    if (fd_ != INVALID) {
       return;
     }
 
@@ -1281,7 +1292,7 @@ using namespace hermes::tools;
 class event final : DefaultSignatures {
  public:
   // Constructs a default event model.
-  event(void) : unwatch_(false), pollfd_({-1, 0, 0}) {
+  event(void) : unwatch_(false), pollfd_({INVALID, 0, 0}) {
     on_send_.running = false;
     on_send_.callback = nullptr;
     on_receive_.running = false;
@@ -1294,7 +1305,7 @@ class event final : DefaultSignatures {
   // Structure containing information on a callback for a specific event.
   struct event_callback_info {
     // Boolean to know if the associated callback is currently running.
-    std::atomic_bool running;
+    std::atomic<bool> running;
 
     // the callback stored which will be executed.
     std::function<void(void)> callback;
@@ -1341,14 +1352,14 @@ class event final : DefaultSignatures {
 
   // Reset the pollfd structure.
   void reset_poll_struct(void) {
-    pollfd_.fd = -1;
+    pollfd_.fd = INVALID;
     pollfd_.events = 0;
     pollfd_.revents = 0;
   }
 
  public:
   // Boolean to know if the poller should stop monitoring this file descriptor.
-  std::atomic_bool unwatch_;
+  std::atomic<bool> unwatch_ = ATOMIC_VAR_INIT(false);
 
   // Structure holding the file descriptor and the event to monitor as well as
   // the detected event.
@@ -1376,7 +1387,7 @@ class event final : DefaultSignatures {
 class poller final : DefaultSignatures {
  public:
   // Construct an empty polling model.
-  poller(void) : stop_(false), socketpair_{-1, -1} {
+  poller(void) : stop_(false), socketpair_{INVALID, INVALID} {
     if (::socketpair(AF_UNIX, SOCK_STREAM, 0, socketpair_) == -1) {
       HERMES_THROW(error::RUNTIME, __PRETTY_FUNCTION__, __LINE__,
                    "socketpair() failed.");
@@ -1609,7 +1620,7 @@ class poller final : DefaultSignatures {
 
  private:
   // Boolean to know if the poller should stop.
-  std::atomic_bool stop_;
+  std::atomic<bool> stop_;
 
   // thread pool to execute callbacks.
   workers workers_;
@@ -1851,7 +1862,7 @@ class client final : DefaultSignatures {
   socket socket_;
 
   // Boolean to know if the client is already connected.
-  std::atomic_bool connected_;
+  std::atomic<bool> connected_ = ATOMIC_VAR_INIT(false);
 
   // A smart pointer on the polling instance.
   std::shared_ptr<poller> poller_;
@@ -1971,7 +1982,7 @@ class server final : DefaultSignatures {
   std::mutex mutex_;
 
   // Boolean to know if the server is running.
-  std::atomic_bool running_;
+  std::atomic<bool> running_;
 
   // A smart pointer on the polling instance.
   std::shared_ptr<poller> poller_;
@@ -2147,7 +2158,7 @@ class client final : DefaultSignatures {
   std::shared_ptr<poller> poller_;
 
   // Boolean to know if the broadcast mode is enabled.
-  std::atomic_bool broadcast_mode_;
+  std::atomic<bool> broadcast_mode_ = ATOMIC_VAR_INIT(false);
 
   // A queue containing the send requests.
   std::queue<std::pair<std::vector<char>, async_send_callback>> send_requests_;
