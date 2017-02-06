@@ -2,7 +2,6 @@
 
 #ifdef _WIN32
 #include <WinSock2.h>
-#include <Windows.h>
 #define UNUSED(x) __pragma(warning(suppress : 4100)) x
 #else
 #include <arpa/inet.h>
