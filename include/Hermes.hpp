@@ -1305,7 +1305,7 @@ class event final : DefaultSignatures {
   // Structure containing information on a callback for a specific event.
   struct event_callback_info {
     // Boolean to know if the associated callback is currently running.
-    std::atomic<bool> running;
+    std::atomic<bool> running = ATOMIC_VAR_INIT(false);
 
     // the callback stored which will be executed.
     std::function<void(void)> callback;
@@ -1620,7 +1620,7 @@ class poller final : DefaultSignatures {
 
  private:
   // Boolean to know if the poller should stop.
-  std::atomic<bool> stop_;
+  std::atomic<bool> stop_ = ATOMIC_VAR_INIT(false);
 
   // thread pool to execute callbacks.
   workers workers_;
@@ -1982,7 +1982,7 @@ class server final : DefaultSignatures {
   std::mutex mutex_;
 
   // Boolean to know if the server is running.
-  std::atomic<bool> running_;
+  std::atomic<bool> running_ = ATOMIC_VAR_INIT(false);
 
   // A smart pointer on the polling instance.
   std::shared_ptr<poller> poller_;
