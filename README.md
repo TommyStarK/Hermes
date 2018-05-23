@@ -21,7 +21,7 @@
 ## Usage
 
 Hermes is a header only library, there is nothing to build and to link with your program.
-You just need to include the `Hermes.hpp` header, to us the `library`.
+You just need to include the `Hermes.hpp` header, to use the `library`.
 
  - Download Hermes:
 
