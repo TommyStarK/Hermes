@@ -31,6 +31,10 @@
 #include <utility>
 #include <vector>
 
+// #ifndef SOCK_CLOEXEC
+// #define SOCK_CLOEXEC    02000000
+// #endif
+
 namespace hermes {
 
 namespace tools {
@@ -1135,8 +1139,12 @@ class socket final : DefaultSignatures {
     }
 
     for (auto p = info_; p != NULL; p = p->ai_next) {
-      if ((fd_ = ::socket(p->ai_family, SOCK_DGRAM | SOCK_CLOEXEC,
-                          IPPROTO_UDP)) == -1) {
+      // if ((fd_ = ::socket(p->ai_family, SOCK_DGRAM | SOCK_CLOEXEC,
+      //                     IPPROTO_UDP)) == -1) {
+      //   continue;
+      // }
+
+      if ((fd_ = ::socket(p->ai_family, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
         continue;
       }
 
@@ -1185,7 +1193,7 @@ class socket final : DefaultSignatures {
     host_ = host;
     port_ = port;
     broadcast_info_.sin_family = AF_INET;
-    broadcast_info_.sin_port = ::htons(port_);
+    broadcast_info_.sin_port = htons(port_);
     broadcast_info_.sin_addr = *((struct in_addr *)hostent->h_addr);
     ::memset(broadcast_info_.sin_zero, '\0', sizeof(broadcast_info_.sin_zero));
   }
