@@ -5,6 +5,17 @@
 #include <memory>
 #include <thread>
 
+void on_read(const std::shared_ptr<hermes::network::tcp::socket>& socket, const std::shared_ptr<hermes::internal::io_service>& io_service, int fd) {
+    auto data = socket->receive();
+    std::cout << data.data();
+
+    io_service->on_write<hermes::network::tcp::socket>(*socket, [socket, data, io_service](int) {
+      socket->send(data.data());
+      io_service->on_read<hermes::network::tcp::socket>(*socket, std::bind(&on_read, socket, io_service, std::placeholders::_1));
+    });
+   
+}
+
 int main() {
   hermes::network::tcp::socket socket;
   auto io_service = hermes::internal::get_io_service(200);
@@ -29,14 +40,7 @@ int main() {
       std::cout << "new client: " << client->fd() << std::endl;
 
       io_service->subscribe<hermes::network::tcp::socket>(*client);
-      io_service->on_read<hermes::network::tcp::socket>(*client, [client, io_service](int){
-        auto data = client->receive();
-        std::cout << data.data() << std::endl;
-
-        io_service->on_write<hermes::network::tcp::socket>(*client, [client, data](int){
-          client->send(data.data());
-        });
-      });
+      io_service->on_read<hermes::network::tcp::socket>(*client, std::bind(&on_read, client, io_service, std::placeholders::_1));
   });
   hermes::internal::signal::wait_for(SIGINT);
   return 0;

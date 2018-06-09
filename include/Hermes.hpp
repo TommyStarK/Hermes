@@ -17,6 +17,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace hermes {
@@ -91,13 +92,13 @@ class thread_pool final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   }
 
   void stop(void) {
-    if (stop_ & 1) {
+    if (stop_) {
       return;
     }
 
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      stop_ ^= 1;
+      stop_ = 1;
     }
 
     condvar_.notify_all();
@@ -113,7 +114,7 @@ class thread_pool final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   task assign_task() {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    condvar_.wait(lock, [&] { return stop_ & 1 || !tasks_.empty(); });
+    condvar_.wait(lock, [&] { return stop_ || !tasks_.empty(); });
 
     if (tasks_.empty()) {
       return nullptr;
@@ -126,7 +127,7 @@ class thread_pool final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
   void routine(void) {
     for (;;) {
-      if (stop_ & 1) {
+      if (stop_) {
         return;
       }
 
@@ -205,7 +206,6 @@ namespace network {
 namespace tcp {
 #ifdef _WIN32
 #else
-
 class socket {
  public:
   socket(void) : bound_(0), fd_(NOTSOCK), host_(""), port_(0) {}
@@ -224,7 +224,7 @@ class socket {
   ~socket(void) = default;
 
  public:
-  bool bound(void) const { return bound_ & 1; }
+  bool bound(void) const { return bound_; }
 
   int fd(void) const { return fd_; }
 
@@ -253,7 +253,7 @@ class socket {
       throw std::runtime_error("bind() failed.");
     }
 
-    bound_ ^= 1;
+    bound_ = 1;
   }
 
   void listen(unsigned int backlog) {
@@ -421,7 +421,6 @@ class socket {
 
   unsigned int port_;
 };
-
 #endif  // _WIN32
 }  // namespace tcp
 
@@ -470,7 +469,7 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
     master_ = std::thread([this] {
 
-      while (!(stop_ & 1)) {
+      while (!stop_) {
         sync();
         if (poll(const_cast<struct pollfd *>(poll_structs_.data()),
                  poll_structs_.size(), TIMEOUT) > 0) {
@@ -482,9 +481,7 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   }
 
   void process_read_handler(int fd, sub &sub) {
-    std::cout << "fd: " << fd << "read event\n";
-
-    sub.on_read_ ^= 1;
+    sub.on_read_ = 1;
     auto callback = sub.read_callback_;
     slaves_.register_task([=] {
       callback(fd);
@@ -493,13 +490,15 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       auto it = subs_.find(fd);
 
       if (it == subs_.end()) {
+        std::cout << "debug 1\n";
         return;
       }
 
       auto &sub = it->second;
       sub.on_read_ = 0;
 
-      if (sub.unsub_ & 1 && !(sub.on_read_ & 1)) {
+      if (sub.unsub_ && !sub.on_read_) {
+        std::cout << "process read handler sub erase\n";
         subs_.erase(it);
       }
 
@@ -508,10 +507,9 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   }
 
   void process_write_handler(int fd, sub &sub) {
-    std::cout << "fd: " << fd << "write event\n";
-
-    sub.on_write_ ^= 1;
+    sub.on_write_ = 1;
     auto callback = sub.write_callback_;
+
     slaves_.register_task([=] {
       callback(fd);
 
@@ -519,13 +517,15 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       auto it = subs_.find(fd);
 
       if (it == subs_.end()) {
+        std::cout << "debug 2\n";
         return;
       }
 
       auto &sub = it->second;
       sub.on_write_ = 0;
 
-      if (sub.unsub_ & 1 && !(sub.on_write_ & 1)) {
+      if (sub.unsub_ && !sub.on_write_) {
+        std::cout << "process write handler sub erase\n";
         subs_.erase(it);
       }
 
@@ -538,7 +538,6 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
     for (const auto &result : poll_structs_) {
       if (result.fd == socket_pair_.get_read_fd() && result.revents & POLLIN) {
-        std::cout << "trigger socketpair\n";
         socket_pair_.read();
         continue;
       }
@@ -549,17 +548,21 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
       auto &sub = subs_.find(result.fd)->second;
 
-      if (result.revents & POLLIN && sub.read_callback_ &&
-          !(sub.on_read_ & 1)) {
+      auto pollin = result.revents & POLLIN;
+      auto pollout = result.revents & POLLOUT;
+
+      std::cout << "process event on fd " << result.fd << " POLLIN: " << pollin
+                << " POLLOUT: " << pollout << std::endl;
+
+      if (result.revents & POLLIN && sub.read_callback_ && !sub.on_read_) {
         process_read_handler(result.fd, sub);
       }
 
-      if (result.revents & POLLOUT && sub.write_callback_ &&
-          !(sub.on_write_ & 1)) {
+      if (result.revents & POLLOUT && sub.write_callback_ && !sub.on_write_) {
         process_write_handler(result.fd, sub);
       }
 
-      if ((sub.unsub_ & 1) && !(sub.on_read_ & 1) && !(sub.on_write_ & 1)) {
+      if ((sub.unsub_) && !(sub.on_read_) && !(sub.on_write_)) {
         std::cout << "unsubscription for " << result.fd << std::endl;
         subs_.erase(subs_.find(result.fd));
       }
@@ -567,13 +570,13 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   }
 
   void stop(void) {
-    if (stop_ & 1) {
+    if (stop_) {
       return;
     }
 
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      stop_ ^= 1;
+      stop_ = 1;
       socket_pair_.write();
     }
 
@@ -597,15 +600,23 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
     poll_structs_.clear();
     for (auto &sub : subs_) {
-      if (sub.second.unsub_ & 1) {
+      auto fd = sub.first;
+      auto unsub = sub.second.unsub_ == 1;
+      auto onread = sub.second.on_read_ == 1;
+      auto onwrite = sub.second.on_write_ == 1;
+
+      std::cout << "io_service::sync fd " << fd << " unsub " << unsub
+                << " onread " << onread << " onwrite " << onwrite << std::endl;
+
+      // if (sub.second.unsub_) {
+      //   poll_structs_.push_back({sub.first, POLLIN, 0});
+      // }
+
+      if (sub.second.read_callback_ && !sub.second.on_read_) {
         poll_structs_.push_back({sub.first, POLLIN, 0});
       }
 
-      if (sub.second.read_callback_ && !(sub.second.on_read_ & 1)) {
-        poll_structs_.push_back({sub.first, POLLIN, 0});
-      }
-
-      if (sub.second.write_callback_ && !(sub.second.on_write_ & 1)) {
+      if (sub.second.write_callback_ && !sub.second.on_write_) {
         poll_structs_.push_back({sub.first, POLLOUT, 0});
       }
     }
@@ -639,8 +650,8 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       return;
     }
 
-    if (sub->second.on_read_ & 1 || sub->second.on_write_ & 1) {
-      sub->second.unsub_ ^= 1;
+    if (sub->second.on_read_ || sub->second.on_write_) {
+      sub->second.unsub_ = 1;
     } else {
       std::cout << "unsubscription for " << sub->first << std::endl;
       subs_.erase(sub);
@@ -653,8 +664,15 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   void subscribe(const T &socket) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto &sub = subs_[socket.fd()];
+    auto u = sub.unsub_ == 1;
+    auto r = sub.on_read_ == 1;
+    auto w = sub.on_write_ == 1;
+    auto rc = sub.read_callback_ ? true : false;
+    auto wc = sub.write_callback_ ? true : false;
+    std::cout << "subscribe fd: " << socket.fd() << " unsub " << u << " onread "
+              << r << " onwrite " << w << " rd_cb " << rc << " wr_cb " << wc
+              << std::endl;
     (void)sub;
-    std::cout << "subscription for: " << socket.fd() << std::endl;
     socket_pair_.write();
   }
 
