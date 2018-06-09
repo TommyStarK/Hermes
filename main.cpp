@@ -36,8 +36,12 @@ int main() {
       }
       
       tp.register_task([client, &m] {
-        while (1) {
+        while (client->fd() != -1) {
           auto data = client->receive();
+
+          if (!data.size()) {
+            return;
+          }
 
           {
             std::lock_guard<std::mutex> lock(m);

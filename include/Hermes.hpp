@@ -173,7 +173,6 @@ class socket {
     int yes = 1;
     create_socket(host, port);
     assert(info_ && info_->ai_addr && info_->ai_addrlen);
-    // defer that([this] { ::freeaddrinfo(info_); });
 
     if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
       throw std::runtime_error("setsockopt() failed.");
@@ -245,7 +244,6 @@ class socket {
 
     create_socket(host, port);
     assert(info_ && info_->ai_addr && info_->ai_addrlen);
-    // defer that([this] { ::freeaddrinfo(info_); });
 
     if (::connect(fd_, info_->ai_addr, info_->ai_addrlen) == -1) {
       throw std::runtime_error("connect() failed.");
@@ -289,8 +287,8 @@ class socket {
         throw std::runtime_error("recv() failed.");
         break;
       case 0:
-        std::cerr << "Connection closed by the remote host.\n";
-        close();
+        std::cerr << "Connection closed by peer.\n";
+        fd_ = NOTSOCK;
         break;
       default:
         break;
