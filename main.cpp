@@ -1,15 +1,16 @@
 #include "include/hermes.hpp"
 
+#include <unistd.h>
 #include <iostream>
 #include <memory>
 #include <thread>
 
 int main() {
   hermes::network::tcp::socket socket;
-  auto multiplexer = hermes::internal::get_multiplexer(200);
+  auto io_service = hermes::internal::get_io_service(200);
 
-  if (!multiplexer) {
-    std::cout << "multiplexer should not be null\n";
+  if (!io_service) {
+    std::cout << "io_service should not be null\n";
     return 1;
   }
 
@@ -21,12 +22,23 @@ int main() {
     return 1;
   }
 
-  std::cout << "server fd: " << socket.fd() << std::endl;
   std::cout << "listening on localhost:27017\n";
-  multiplexer->watch<hermes::network::tcp::socket>(socket);
+  io_service->subscribe<hermes::network::tcp::socket>(socket);
+  io_service->on_read<hermes::network::tcp::socket>(socket, [&](int){
+      auto client = std::make_shared<hermes::network::tcp::socket>(socket.accept());
+      std::cout << "new client: " << client->fd() << std::endl;
+
+      io_service->subscribe<hermes::network::tcp::socket>(*client);
+      io_service->on_read<hermes::network::tcp::socket>(*client, [client, io_service](int){
+        auto data = client->receive();
+        std::cout << data.data() << std::endl;
+
+        io_service->on_write<hermes::network::tcp::socket>(*client, [client, data](int){
+          client->send(data.data());
+        });
+      });
+  });
   hermes::internal::signal::wait_for(SIGINT);
-  hermes::internal::set_multiplexer(nullptr);
-  socket.close();
   return 0;
 }
 

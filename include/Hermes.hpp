@@ -16,6 +16,7 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace hermes {
@@ -24,8 +25,10 @@ namespace internal {
 
 #ifdef _WIN32
 #define NOTSOCK INVALID_SOCKET
+static int TIMEOUT = INFINITE;
 #else
 #define NOTSOCK -1
+static int TIMEOUT = -1;
 #endif
 
 static unsigned int const BUFFER_SIZE = 4096;
@@ -434,21 +437,132 @@ namespace internal {
 
 #ifdef _WIN32
 #else
-class multiplexer final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
+#include <poll.h>
+class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
-  typedef std::function<void(void)> callback;
+  typedef std::function<void(int)> callback;
 
-  multiplexer(void) : slaves_(DEFAULT_THREAD_POOL_SIZE) { init(); }
+  struct sub {
+    sub(void) : read_callback_(nullptr), write_callback_(nullptr) {}
 
-  multiplexer(unsigned int slaves) : slaves_(slaves) { init(); }
+    callback read_callback_;
+    std::atomic<char> on_read_ = ATOMIC_VAR_INIT(0);
 
-  ~multiplexer(void) { stop(); }
+    callback write_callback_;
+    std::atomic<char> on_write_ = ATOMIC_VAR_INIT(0);
+
+    std::atomic<char> unsub_ = ATOMIC_VAR_INIT(0);
+  };
+
+ public:
+  io_service(void) : slaves_(DEFAULT_THREAD_POOL_SIZE) { init(); }
+
+  io_service(unsigned int slaves) : slaves_(slaves) { init(); }
+
+  ~io_service(void) { stop(); }
 
  private:
   void init(void) {
     try {
       socket_pair_.init();
     } catch (const std::exception &) {
+    }
+
+    master_ = std::thread([this] {
+
+      while (!(stop_ & 1)) {
+        sync();
+        if (poll(const_cast<struct pollfd *>(poll_structs_.data()),
+                 poll_structs_.size(), TIMEOUT) > 0) {
+          process();
+        }
+      }
+
+    });
+  }
+
+  void process_read_handler(int fd, sub &sub) {
+    std::cout << "fd: " << fd << "read event\n";
+
+    sub.on_read_ ^= 1;
+    auto callback = sub.read_callback_;
+    slaves_.register_task([=] {
+      callback(fd);
+
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto it = subs_.find(fd);
+
+      if (it == subs_.end()) {
+        return;
+      }
+
+      auto &sub = it->second;
+      sub.on_read_ = 0;
+
+      if (sub.unsub_ & 1 && !(sub.on_read_ & 1)) {
+        subs_.erase(it);
+      }
+
+      socket_pair_.write();
+    });
+  }
+
+  void process_write_handler(int fd, sub &sub) {
+    std::cout << "fd: " << fd << "write event\n";
+
+    sub.on_write_ ^= 1;
+    auto callback = sub.write_callback_;
+    slaves_.register_task([=] {
+      callback(fd);
+
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto it = subs_.find(fd);
+
+      if (it == subs_.end()) {
+        return;
+      }
+
+      auto &sub = it->second;
+      sub.on_write_ = 0;
+
+      if (sub.unsub_ & 1 && !(sub.on_write_ & 1)) {
+        subs_.erase(it);
+      }
+
+      socket_pair_.write();
+    });
+  }
+
+  void process(void) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    for (const auto &result : poll_structs_) {
+      if (result.fd == socket_pair_.get_read_fd() && result.revents & POLLIN) {
+        std::cout << "trigger socketpair\n";
+        socket_pair_.read();
+        continue;
+      }
+
+      if (subs_.find(result.fd) == subs_.end()) {
+        continue;
+      }
+
+      auto &sub = subs_.find(result.fd)->second;
+
+      if (result.revents & POLLIN && sub.read_callback_ &&
+          !(sub.on_read_ & 1)) {
+        process_read_handler(result.fd, sub);
+      }
+
+      if (result.revents & POLLOUT && sub.write_callback_ &&
+          !(sub.on_write_ & 1)) {
+        process_write_handler(result.fd, sub);
+      }
+
+      if ((sub.unsub_ & 1) && !(sub.on_read_ & 1) && !(sub.on_write_ & 1)) {
+        std::cout << "unsubscription for " << result.fd << std::endl;
+        subs_.erase(subs_.find(result.fd));
+      }
     }
   }
 
@@ -463,9 +577,12 @@ class multiplexer final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       socket_pair_.write();
     }
 
-    if (master_.joinable()) {
-      master_.join();
-    }
+    // if (master_.joinable()) {
+    //   master_.join();
+    // }
+    while (!master_.joinable())
+      ;
+    master_.join();
 
     slaves_.stop();
 
@@ -475,23 +592,80 @@ class multiplexer final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     }
   }
 
+  void sync(void) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    poll_structs_.clear();
+    for (auto &sub : subs_) {
+      if (sub.second.unsub_ & 1) {
+        poll_structs_.push_back({sub.first, POLLIN, 0});
+      }
+
+      if (sub.second.read_callback_ && !(sub.second.on_read_ & 1)) {
+        poll_structs_.push_back({sub.first, POLLIN, 0});
+      }
+
+      if (sub.second.write_callback_ && !(sub.second.on_write_ & 1)) {
+        poll_structs_.push_back({sub.first, POLLOUT, 0});
+      }
+    }
+
+    poll_structs_.push_back({socket_pair_.get_read_fd(), POLLIN, 0});
+  }
+
  public:
   template <typename T>
-  void unwatch(const T &socket) {
-    std::cout << socket.fd();
+  void on_read(const T &socket, callback cb) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto &sub = subs_[socket.fd()];
+    sub.read_callback_ = cb;
+    socket_pair_.write();
   }
 
   template <typename T>
-  void watch(const T &socket) {
-    std::cout << "debug watch. fd socket: " << socket.fd() << std::endl;
-    std::cout << socket_pair_.get_read_fd() << " "
-              << socket_pair_.get_write_fd() << std::endl;
+  void on_write(const T &socket, callback cb) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto &sub = subs_[socket.fd()];
+    sub.write_callback_ = cb;
+    socket_pair_.write();
+  }
+
+  template <typename T>
+  void unsubscribe(const T &socket) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto sub = subs_.find(socket.fd());
+
+    if (sub == subs_.end()) {
+      return;
+    }
+
+    if (sub->second.on_read_ & 1 || sub->second.on_write_ & 1) {
+      sub->second.unsub_ ^= 1;
+    } else {
+      std::cout << "unsubscription for " << sub->first << std::endl;
+      subs_.erase(sub);
+    }
+
+    socket_pair_.write();
+  }
+
+  template <typename T>
+  void subscribe(const T &socket) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto &sub = subs_[socket.fd()];
+    (void)sub;
+    std::cout << "subscription for: " << socket.fd() << std::endl;
+    socket_pair_.write();
   }
 
  private:
+  std::unordered_map<int, sub> subs_;
+
   std::thread master_;
 
   std::mutex mutex_;
+
+  std::vector<struct pollfd> poll_structs_;
 
   thread_pool slaves_;
 
@@ -502,27 +676,27 @@ class multiplexer final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 #endif
 
 namespace {
-static std::shared_ptr<multiplexer> g_multiplexer = nullptr;
+static std::shared_ptr<io_service> g_io_service = nullptr;
 }  // namespace
 
-void set_multiplexer(const std::shared_ptr<multiplexer> &mpx) {
-  if (g_multiplexer) {
-    g_multiplexer.reset();
+void set_io_service(const std::shared_ptr<io_service> &mpx) {
+  if (g_io_service) {
+    g_io_service.reset();
   }
 
-  g_multiplexer = mpx;
+  g_io_service = mpx;
 }
 
-const std::shared_ptr<multiplexer> &get_multiplexer(int slaves) {
-  if (!g_multiplexer) {
+const std::shared_ptr<io_service> &get_io_service(int slaves) {
+  if (!g_io_service) {
     if (slaves <= 0) {
-      g_multiplexer = std::make_shared<multiplexer>();
+      g_io_service = std::make_shared<io_service>();
     } else {
-      g_multiplexer = std::make_shared<multiplexer>(slaves);
+      g_io_service = std::make_shared<io_service>(slaves);
     }
   }
 
-  return g_multiplexer;
+  return g_io_service;
 }
 
 }  // namespace internal
