@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <csignal>
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -40,6 +41,27 @@ class _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ &operator=(
       const _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ &) = delete;
   _no_default_ctor_cpy_ctor_mv_ctor_assign_op_() = default;
+};
+
+class signal final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
+ public:
+  static std::mutex &mutex(void) {
+    static std::mutex mutex;
+    return mutex;
+  }
+
+  static std::condition_variable &condvar(void) {
+    static std::condition_variable condvar;
+    return condvar;
+  }
+
+  static void signal_handler(int) { condvar().notify_all(); }
+
+  static void wait_for(int signal_number) {
+    ::signal(signal_number, &signal::signal_handler);
+    std::unique_lock<std::mutex> lock(mutex());
+    condvar().wait(lock);
+  }
 };
 
 class thread_pool final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
@@ -110,8 +132,7 @@ class thread_pool final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       if (tsk) {
         try {
           tsk();
-        } catch (const std::exception &e) {
-          std::cerr << e.what() << '\n';
+        } catch (const std::exception &) {
         }
       }
     }
@@ -128,6 +149,52 @@ class thread_pool final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
   std::vector<std::thread> threads_;
 };
+
+#ifdef _WIN32
+#else
+class socket_pair final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
+ public:
+  socket_pair(void) : sv_{NOTSOCK, NOTSOCK} {}
+
+  ~socket_pair(void) { close(); }
+
+ public:
+  void close(void) {
+    if (sv_[0] != NOTSOCK) {
+      if (::close(sv_[0]) == -1) {
+        throw std::runtime_error("close() failed.");
+      }
+    }
+
+    if (sv_[1] != NOTSOCK) {
+      if (::close(sv_[1]) == -1) {
+        throw std::runtime_error("close() failed.");
+      }
+    }
+  }
+
+  int get_read_fd(void) const { return sv_[0]; }
+
+  int get_write_fd(void) const { return sv_[1]; }
+
+  void init(void) {
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv_) == -1) {
+      throw std::runtime_error("socketpair() failed.");
+    }
+  }
+
+  void read(void) {
+    char buffer[internal::BUFFER_SIZE];
+    ::read(sv_[0], buffer, internal::BUFFER_SIZE);
+  }
+
+  void write(void) { ::write(sv_[1], "h", 1); }
+
+ private:
+  int sv_[2];
+};
+#endif
+
 }  // namespace internal
 
 namespace network {
@@ -364,21 +431,27 @@ namespace udp {
 }  // namespace network
 
 namespace internal {
+
+#ifdef _WIN32
+#else
 class multiplexer final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
   typedef std::function<void(void)> callback;
 
-  multiplexer(void) : slaves_(DEFAULT_THREAD_POOL_SIZE), sv_{NOTSOCK, NOTSOCK} {
-    init();
+  multiplexer(void) : slaves_(DEFAULT_THREAD_POOL_SIZE) { init(); }
+
+  multiplexer(unsigned int slaves) : slaves_(slaves) { init(); }
+
+  ~multiplexer(void) { stop(); }
+
+ private:
+  void init(void) {
+    try {
+      socket_pair_.init();
+    } catch (const std::exception &) {
+    }
   }
 
-  multiplexer(unsigned int slaves) : slaves_(slaves), sv_{NOTSOCK, NOTSOCK} {
-    init();
-  }
-
-  ~multiplexer() { stop(); }
-
- public:
   void stop(void) {
     if (stop_ & 1) {
       return;
@@ -387,35 +460,32 @@ class multiplexer final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       stop_ ^= 1;
+      socket_pair_.write();
     }
 
-    master_.join();
+    if (master_.joinable()) {
+      master_.join();
+    }
+
     slaves_.stop();
 
-    if (::close(sv_[0]) == -1 || ::close(sv_[1]) == -1) {
-      throw std::runtime_error("close() failed.");
+    try {
+      socket_pair_.close();
+    } catch (const std::exception &) {
     }
   }
 
+ public:
   template <typename T>
-  void unwatch(const T &socket) {}
-
-  template <typename T>
-  void watch(const T &socket) {
+  void unwatch(const T &socket) {
     std::cout << socket.fd();
   }
 
- private:
-  void init(void) {
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv_) == -1) {
-      throw std::runtime_error("socketpair() failed.");
-    }
-
-    master_ = std::thread([this] {
-      while (!(stop_ & 1)) {
-        std::cout << "multiplexing...\n";
-      }
-    });
+  template <typename T>
+  void watch(const T &socket) {
+    std::cout << "debug watch. fd socket: " << socket.fd() << std::endl;
+    std::cout << socket_pair_.get_read_fd() << " "
+              << socket_pair_.get_write_fd() << std::endl;
   }
 
  private:
@@ -427,12 +497,21 @@ class multiplexer final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
   std::atomic<char> stop_ = ATOMIC_VAR_INIT(0);
 
-  int sv_[2];
+  socket_pair socket_pair_;
 };
+#endif
 
 namespace {
 static std::shared_ptr<multiplexer> g_multiplexer = nullptr;
 }  // namespace
+
+void set_multiplexer(const std::shared_ptr<multiplexer> &mpx) {
+  if (g_multiplexer) {
+    g_multiplexer.reset();
+  }
+
+  g_multiplexer = mpx;
+}
 
 const std::shared_ptr<multiplexer> &get_multiplexer(int slaves) {
   if (!g_multiplexer) {
@@ -447,5 +526,20 @@ const std::shared_ptr<multiplexer> &get_multiplexer(int slaves) {
 }
 
 }  // namespace internal
+
+namespace network {
+namespace tcp {
+#ifdef _WIN32
+#else
+#endif
+}  // namespace tcp
+
+namespace udp {
+#ifdef _WIN32
+#else
+#endif
+}  // namespace udp
+
+}  // namespace network
 
 }  // namespace hermes
