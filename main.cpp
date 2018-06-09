@@ -6,6 +6,13 @@
 #include <memory>
 #include <thread>
 
+// int main() {
+//   auto multiplexer = hermes::internal::get_multiplexer(-1);
+
+//   return 0;
+// }
+
+// echo tcp server
 int main() {
   std::mutex m;
   hermes::internal::thread_pool tp(100);
@@ -45,7 +52,7 @@ int main() {
 
           {
             std::lock_guard<std::mutex> lock(m);
-            std::cout << "data received: " << data.data();
+            std::cout << data.data();
           }
 
           client->send(data.data());

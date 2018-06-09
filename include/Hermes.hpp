@@ -29,6 +29,8 @@ namespace internal {
 
 static unsigned int const BUFFER_SIZE = 4096;
 
+static unsigned int const DEFAULT_THREAD_POOL_SIZE = 100;
+
 class _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
   _no_default_ctor_cpy_ctor_mv_ctor_assign_op_(
@@ -126,6 +128,42 @@ class thread_pool final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
   std::vector<std::thread> threads_;
 };
+
+class multiplexer final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
+ public:
+  multiplexer(void) : slaves_(DEFAULT_THREAD_POOL_SIZE) {
+    std::cout << "ctor multiplexer\n";
+  }
+
+  multiplexer(unsigned int slaves) : slaves_(slaves) {}
+
+  ~multiplexer() {}
+
+ private:
+  std::thread master_;
+
+  std::mutex mutex_;
+
+  thread_pool slaves_;
+
+  std::atomic<char> stop_ = ATOMIC_VAR_INIT(0);
+};
+
+namespace {
+static std::shared_ptr<multiplexer> g_multiplexer = nullptr;
+} // end anon
+
+const std::shared_ptr<multiplexer> &get_multiplexer(int slaves) {
+  if (!g_multiplexer) {
+    if (slaves <= 0) {
+      g_multiplexer = std::make_shared<multiplexer>();
+    } else {
+      g_multiplexer = std::make_shared<multiplexer>(slaves);
+    }
+  }
+
+  return g_multiplexer;
+}
 
 }  // namespace internal
 
