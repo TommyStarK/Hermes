@@ -44,7 +44,7 @@ class _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
 class thread_pool final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
-  typedef std::function<void()> task;
+  typedef std::function<void(void)> task;
 
   explicit thread_pool(unsigned int threads) {
     for (unsigned int i = 0; i < threads; i++) {
@@ -128,43 +128,6 @@ class thread_pool final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
   std::vector<std::thread> threads_;
 };
-
-class multiplexer final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
- public:
-  multiplexer(void) : slaves_(DEFAULT_THREAD_POOL_SIZE) {
-    std::cout << "ctor multiplexer\n";
-  }
-
-  multiplexer(unsigned int slaves) : slaves_(slaves) {}
-
-  ~multiplexer() {}
-
- private:
-  std::thread master_;
-
-  std::mutex mutex_;
-
-  thread_pool slaves_;
-
-  std::atomic<char> stop_ = ATOMIC_VAR_INIT(0);
-};
-
-namespace {
-static std::shared_ptr<multiplexer> g_multiplexer = nullptr;
-} // end anon
-
-const std::shared_ptr<multiplexer> &get_multiplexer(int slaves) {
-  if (!g_multiplexer) {
-    if (slaves <= 0) {
-      g_multiplexer = std::make_shared<multiplexer>();
-    } else {
-      g_multiplexer = std::make_shared<multiplexer>(slaves);
-    }
-  }
-
-  return g_multiplexer;
-}
-
 }  // namespace internal
 
 namespace network {
@@ -399,5 +362,90 @@ namespace udp {
 }  // namespace udp
 
 }  // namespace network
+
+namespace internal {
+class multiplexer final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
+ public:
+  typedef std::function<void(void)> callback;
+
+  multiplexer(void) : slaves_(DEFAULT_THREAD_POOL_SIZE), sv_{NOTSOCK, NOTSOCK} {
+    init();
+  }
+
+  multiplexer(unsigned int slaves) : slaves_(slaves), sv_{NOTSOCK, NOTSOCK} {
+    init();
+  }
+
+  ~multiplexer() { stop(); }
+
+ public:
+  void stop(void) {
+    if (stop_ & 1) {
+      return;
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      stop_ ^= 1;
+    }
+
+    master_.join();
+    slaves_.stop();
+
+    if (::close(sv_[0]) == -1 || ::close(sv_[1]) == -1) {
+      throw std::runtime_error("close() failed.");
+    }
+  }
+
+  template <typename T>
+  void unwatch(const T &socket) {}
+
+  template <typename T>
+  void watch(const T &socket) {
+    std::cout << socket.fd();
+  }
+
+ private:
+  void init(void) {
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv_) == -1) {
+      throw std::runtime_error("socketpair() failed.");
+    }
+
+    master_ = std::thread([this] {
+      while (!(stop_ & 1)) {
+        std::cout << "multiplexing...\n";
+      }
+    });
+  }
+
+ private:
+  std::thread master_;
+
+  std::mutex mutex_;
+
+  thread_pool slaves_;
+
+  std::atomic<char> stop_ = ATOMIC_VAR_INIT(0);
+
+  int sv_[2];
+};
+
+namespace {
+static std::shared_ptr<multiplexer> g_multiplexer = nullptr;
+}  // namespace
+
+const std::shared_ptr<multiplexer> &get_multiplexer(int slaves) {
+  if (!g_multiplexer) {
+    if (slaves <= 0) {
+      g_multiplexer = std::make_shared<multiplexer>();
+    } else {
+      g_multiplexer = std::make_shared<multiplexer>(slaves);
+    }
+  }
+
+  return g_multiplexer;
+}
+
+}  // namespace internal
 
 }  // namespace hermes
