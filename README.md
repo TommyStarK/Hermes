@@ -4,7 +4,6 @@
 
 > _Hermes is an Olympian god in Greek religion and mythology. Moving freely between the worlds of the mortal and the divine,
  he is portrayed as emissary and the messenger of the gods._
-
 > _Hermes suffers from no limit. He loves to outwit other gods for his own satisfaction or for the sake of humankind._
 
 
@@ -22,13 +21,13 @@ Hermes is a header only library, you just need to include the `Hermes.hpp` heade
  - Download Hermes:
 
 ```bash
-  git clone --recursive https://github.com/TommyStarK/Hermes.git
+git clone --recursive https://github.com/TommyStarK/Hermes.git
 ```
 
 - Run tests:
 
 ```bash
-  ./run_tests.sh
+./run_tests.sh
 ```
 
 ## Documentation
