@@ -12,6 +12,7 @@
 #include <condition_variable>
 #include <csignal>
 #include <iostream>
+#include <list>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -458,7 +459,20 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
   io_service(unsigned int slaves) : slaves_(slaves) { init(); }
 
-  ~io_service(void) { stop(); }
+  ~io_service(void) {
+    stop_ = 1;
+
+    socket_pair_.write();
+    if (master_.joinable()) {
+      master_.join();
+    }
+    slaves_.stop();
+
+    try {
+      socket_pair_.close();
+    } catch (const std::exception &) {
+    }
+  }
 
  private:
   void init(void) {
@@ -468,21 +482,20 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     }
 
     master_ = std::thread([this] {
-
       while (!stop_) {
         sync();
         if (poll(const_cast<struct pollfd *>(poll_structs_.data()),
-                 poll_structs_.size(), TIMEOUT) > 0) {
+                poll_structs_.size(), TIMEOUT) > 0) {
           process();
         }
       }
-
     });
   }
 
   void process_read_handler(int fd, sub &sub) {
     sub.on_read_ = 1;
     auto callback = sub.read_callback_;
+
     slaves_.register_task([=] {
       callback(fd);
 
@@ -490,7 +503,6 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       auto it = subs_.find(fd);
 
       if (it == subs_.end()) {
-        std::cout << "debug 1\n";
         return;
       }
 
@@ -498,8 +510,8 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       sub.on_read_ = 0;
 
       if (sub.unsub_ && !sub.on_read_) {
-        std::cout << "process read handler sub erase\n";
         subs_.erase(it);
+        condvar_.notify_all();
       }
 
       socket_pair_.write();
@@ -517,7 +529,6 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       auto it = subs_.find(fd);
 
       if (it == subs_.end()) {
-        std::cout << "debug 2\n";
         return;
       }
 
@@ -525,8 +536,8 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       sub.on_write_ = 0;
 
       if (sub.unsub_ && !sub.on_write_) {
-        std::cout << "process write handler sub erase\n";
         subs_.erase(it);
+        condvar_.notify_all();
       }
 
       socket_pair_.write();
@@ -547,13 +558,6 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       }
 
       auto &sub = subs_.find(result.fd)->second;
-
-      auto pollin = result.revents & POLLIN;
-      auto pollout = result.revents & POLLOUT;
-
-      std::cout << "process event on fd " << result.fd << " POLLIN: " << pollin
-                << " POLLOUT: " << pollout << std::endl;
-
       if (result.revents & POLLIN && sub.read_callback_ && !sub.on_read_) {
         process_read_handler(result.fd, sub);
       }
@@ -562,36 +566,10 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
         process_write_handler(result.fd, sub);
       }
 
-      if ((sub.unsub_) && !(sub.on_read_) && !(sub.on_write_)) {
-        std::cout << "unsubscription for " << result.fd << std::endl;
+      if (sub.unsub_ && !sub.on_read_ && !sub.on_write_) {
         subs_.erase(subs_.find(result.fd));
+        condvar_.notify_all();
       }
-    }
-  }
-
-  void stop(void) {
-    if (stop_) {
-      return;
-    }
-
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      stop_ = 1;
-      socket_pair_.write();
-    }
-
-    // if (master_.joinable()) {
-    //   master_.join();
-    // }
-    while (!master_.joinable())
-      ;
-    master_.join();
-
-    slaves_.stop();
-
-    try {
-      socket_pair_.close();
-    } catch (const std::exception &) {
     }
   }
 
@@ -599,19 +577,8 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     std::lock_guard<std::mutex> lock(mutex_);
 
     poll_structs_.clear();
+    poll_structs_.push_back({socket_pair_.get_read_fd(), POLLIN, 0});
     for (auto &sub : subs_) {
-      auto fd = sub.first;
-      auto unsub = sub.second.unsub_ == 1;
-      auto onread = sub.second.on_read_ == 1;
-      auto onwrite = sub.second.on_write_ == 1;
-
-      std::cout << "io_service::sync fd " << fd << " unsub " << unsub
-                << " onread " << onread << " onwrite " << onwrite << std::endl;
-
-      // if (sub.second.unsub_) {
-      //   poll_structs_.push_back({sub.first, POLLIN, 0});
-      // }
-
       if (sub.second.read_callback_ && !sub.second.on_read_) {
         poll_structs_.push_back({sub.first, POLLIN, 0});
       }
@@ -619,9 +586,11 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       if (sub.second.write_callback_ && !sub.second.on_write_) {
         poll_structs_.push_back({sub.first, POLLOUT, 0});
       }
-    }
 
-    poll_structs_.push_back({socket_pair_.get_read_fd(), POLLIN, 0});
+      if (sub.second.unsub_) {
+        poll_structs_.push_back({sub.first, POLLIN | POLLOUT, 0});
+      }
+    }
   }
 
  public:
@@ -653,8 +622,8 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     if (sub->second.on_read_ || sub->second.on_write_) {
       sub->second.unsub_ = 1;
     } else {
-      std::cout << "unsubscription for " << sub->first << std::endl;
       subs_.erase(sub);
+      condvar_.notify_all();
     }
 
     socket_pair_.write();
@@ -664,32 +633,33 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   void subscribe(const T &socket) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto &sub = subs_[socket.fd()];
-    auto u = sub.unsub_ == 1;
-    auto r = sub.on_read_ == 1;
-    auto w = sub.on_write_ == 1;
-    auto rc = sub.read_callback_ ? true : false;
-    auto wc = sub.write_callback_ ? true : false;
-    std::cout << "subscribe fd: " << socket.fd() << " unsub " << u << " onread "
-              << r << " onwrite " << w << " rd_cb " << rc << " wr_cb " << wc
-              << std::endl;
     (void)sub;
     socket_pair_.write();
   }
 
+  template <typename T>
+  void wait_for_unsubscription(const T &socket) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    condvar_.wait(lock,
+                  [&]() { return subs_.find(socket.fd()) == subs_.end(); });
+  }
+
  private:
-  std::unordered_map<int, sub> subs_;
+  std::condition_variable condvar_;
+
+  std::vector<struct pollfd> poll_structs_;
 
   std::thread master_;
 
   std::mutex mutex_;
 
-  std::vector<struct pollfd> poll_structs_;
-
   thread_pool slaves_;
+
+  socket_pair socket_pair_;
 
   std::atomic<char> stop_ = ATOMIC_VAR_INIT(0);
 
-  socket_pair socket_pair_;
+  std::unordered_map<int, sub> subs_;
 };
 #endif
 
@@ -723,6 +693,376 @@ namespace network {
 namespace tcp {
 #ifdef _WIN32
 #else
+
+class client {
+ public:
+  client(void) : disconnection_handler_(nullptr) {
+    io_service_ = internal::get_io_service(-1);
+  }
+
+  explicit client(socket &&socket)
+      : io_service_(internal::get_io_service(-1)),
+        socket_(std::move(socket)),
+        disconnection_handler_(nullptr) {
+    is_connected_ = true;
+    io_service_->subscribe<tcp::socket>(socket_);
+  }
+
+  ~client(void) { disconnect(true); }
+
+  client(const client &) = delete;
+  client &operator=(const client &) = delete;
+
+ public:
+  const std::string &get_host(void) const { return socket_.host(); }
+
+  unsigned int get_port(void) const { return socket_.port(); }
+
+ public:
+  void connect(const std::string &host, unsigned int port) {
+    if (is_connected()) {
+      return;
+    }
+
+    try {
+      socket_.connect(host, port);
+      io_service_->subscribe<tcp::socket>(socket_);
+    } catch (const std::exception &e) {
+      socket_.close();
+      throw e;
+    }
+
+    is_connected_ = true;
+  }
+
+  void disconnect(bool wait_for_removal = false) {
+    if (!is_connected()) {
+      return;
+    }
+
+    is_connected_ = false;
+
+    clear_read_requests();
+    clear_write_requests();
+
+    io_service_->unsubscribe<tcp::socket>(socket_);
+    if (wait_for_removal) {
+      io_service_->wait_for_unsubscription<tcp::socket>(socket_);
+    }
+
+    socket_.close();
+  }
+
+  bool is_connected(void) const { return is_connected_; }
+
+ private:
+  void call_disconnection_handler(void) {
+    if (disconnection_handler_) {
+      disconnection_handler_();
+    }
+  }
+
+ public:
+  struct read_result {
+    bool success;
+    std::vector<char> buffer;
+  };
+
+  struct write_result {
+    bool success;
+    std::size_t size;
+  };
+
+ public:
+  typedef std::function<void(read_result &)> async_read_callback_t;
+
+  typedef std::function<void(write_result &)> async_write_callback_t;
+
+ public:
+  struct read_request {
+    std::size_t size;
+    async_read_callback_t async_read_callback;
+  };
+
+  struct write_request {
+    std::vector<char> buffer;
+    async_write_callback_t async_write_callback;
+  };
+
+ public:
+  void async_read(const read_request &request) {
+    std::lock_guard<std::mutex> lock(read_requests_mutex_);
+
+    if (is_connected()) {
+      io_service_->on_read<tcp::socket>(
+          socket_,
+          std::bind(&client::on_read_available, this, std::placeholders::_1));
+      read_requests_.push(request);
+    } else {
+    }
+  }
+
+  void async_write(const write_request &request) {
+    std::lock_guard<std::mutex> lock(write_requests_mutex_);
+
+    if (is_connected()) {
+      io_service_->on_write<tcp::socket>(
+          socket_,
+          std::bind(&client::on_write_available, this, std::placeholders::_1));
+      write_requests_.push(request);
+    } else {
+    }
+  }
+
+ public:
+  tcp::socket &get_socket(void);
+
+  const tcp::socket &get_socket(void) const;
+
+ public:
+  const std::shared_ptr<internal::io_service> &get_io_service(void) const;
+
+ public:
+  typedef std::function<void()> disconnection_handler_t;
+
+  void set_on_disconnection_handler(
+      const disconnection_handler_t &disconnection_handler);
+
+ private:
+  void on_read_available(int) {
+    read_result result;
+    auto callback = process_read(result);
+
+    if (!result.success) {
+      disconnect();
+    }
+
+    if (callback) {
+      callback(result);
+    }
+
+    if (!result.success) {
+      call_disconnection_handler();
+    }
+  }
+
+  void on_write_available(int) {
+    write_result result;
+    auto callback = process_write(result);
+
+    if (!result.success) {
+      disconnect();
+    }
+
+    if (callback) {
+      callback(result);
+    }
+
+    if (!result.success) {
+      call_disconnection_handler();
+    }
+  }
+
+ private:
+  void clear_read_requests(void) {
+    std::lock_guard<std::mutex> lock(read_requests_mutex_);
+
+    std::queue<read_request> empty;
+    std::swap(read_requests_, empty);
+  }
+
+  void clear_write_requests(void) {
+    std::lock_guard<std::mutex> lock(write_requests_mutex_);
+
+    std::queue<write_request> empty;
+    std::swap(write_requests_, empty);
+  }
+
+ private:
+  async_read_callback_t process_read(read_result &result) {
+    std::lock_guard<std::mutex> lock(read_requests_mutex_);
+
+    if (read_requests_.empty()) {
+      return nullptr;
+    }
+
+    const auto &request = read_requests_.front();
+    auto callback = request.async_read_callback;
+
+    try {
+      result.buffer = socket_.receive(request.size);
+      result.success = true;
+    } catch (const std::exception &) {
+      result.success = false;
+    }
+
+    read_requests_.pop();
+
+    if (read_requests_.empty()) {
+      io_service_->on_read<tcp::socket>(socket_, nullptr);
+    }
+
+    return callback;
+  }
+
+  async_write_callback_t process_write(write_result &result) {
+    std::lock_guard<std::mutex> lock(write_requests_mutex_);
+
+    if (write_requests_.empty()) {
+      return nullptr;
+    }
+
+    const auto &request = write_requests_.front();
+    auto callback = request.async_write_callback;
+
+    try {
+      result.size = socket_.send(request.buffer, request.buffer.size());
+      result.success = true;
+    } catch (const std::exception &) {
+      result.success = false;
+    }
+
+    write_requests_.pop();
+
+    if (write_requests_.empty()) {
+      io_service_->on_write<tcp::socket>(socket_, nullptr);
+    }
+
+    return callback;
+  }
+
+ private:
+  std::shared_ptr<internal::io_service> io_service_;
+
+  tcp::socket socket_;
+
+  std::atomic<bool> is_connected_ = ATOMIC_VAR_INIT(false);
+
+  std::queue<read_request> read_requests_;
+
+  std::queue<write_request> write_requests_;
+
+  std::mutex read_requests_mutex_;
+
+  std::mutex write_requests_mutex_;
+
+  disconnection_handler_t disconnection_handler_;
+};
+
+class server {
+ public:
+  server(void)
+      : io_service_(internal::get_io_service(-1)),
+        new_connection_callback_(nullptr) {}
+
+  ~server(void) { stop(); }
+
+  server(const server &) = delete;
+  server &operator=(const server &) = delete;
+
+ public:
+  typedef std::function<bool(const std::shared_ptr<client> &)>
+      new_connection_callback_t;
+
+  void start(const std::string &host, unsigned int port,
+             const new_connection_callback_t &callback = nullptr) {
+    if (is_running()) {
+      return;
+    }
+
+    socket_.bind(host, port);
+    socket_.listen(10);
+
+    io_service_->subscribe<tcp::socket>(socket_);
+    io_service_->on_read<tcp::socket>(
+        socket_,
+        std::bind(&server::on_read_available, this, std::placeholders::_1));
+    new_connection_callback_ = callback;
+
+    is_running_ = 1;
+  }
+
+  void stop(bool wait_for_removal = false,
+            bool recursive_wait_for_removal = true) {
+    if (!is_running()) {
+      return;
+    }
+
+    is_running_ = 0;
+
+    io_service_->unsubscribe<tcp::socket>(socket_);
+    if (wait_for_removal) {
+      io_service_->wait_for_unsubscription<tcp::socket>(socket_);
+    }
+    socket_.close();
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto &client : clients_) {
+      client->disconnect(recursive_wait_for_removal && wait_for_removal);
+    }
+    clients_.clear();
+  }
+
+  bool is_running(void) const { return is_running_ == 1; }
+
+ public:
+  tcp::socket &get_socket(void) { return socket_; }
+
+  const tcp::socket &get_socket(void) const { return socket_; }
+
+ public:
+  const std::shared_ptr<internal::io_service> &get_io_service(void) const {
+    return io_service_;
+  }
+
+ public:
+  const std::list<std::shared_ptr<client> > &get_clients(void) const {
+    return clients_;
+  }
+
+ private:
+  void on_read_available(int) {
+    try {
+      auto client = std::make_shared<tcp::client>(socket_.accept());
+
+      if (!new_connection_callback_ || !new_connection_callback_(client)) {
+        // client->set_on_disconnection_handler(
+        //     std::bind(&server::on_client_disconnected, this, client));
+        clients_.push_back(client);
+      } else {
+      }
+    } catch (const std::exception &) {
+      stop();
+    }
+  }
+
+  void on_client_disconnected(const std::shared_ptr<client> &client) {
+    if (!is_running()) {
+      return;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = std::find(clients_.begin(), clients_.end(), client);
+
+    if (it != clients_.end()) {
+      clients_.erase(it);
+    }
+  }
+
+ private:
+  std::shared_ptr<internal::io_service> io_service_;
+
+  tcp::socket socket_;
+
+  std::atomic<char> is_running_ = ATOMIC_VAR_INIT(false);
+
+  std::list<std::shared_ptr<client> > clients_;
+
+  std::mutex mutex_;
+
+  new_connection_callback_t new_connection_callback_;
+};
+
 #endif
 }  // namespace tcp
 
