@@ -1195,6 +1195,99 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 namespace udp {
 #ifdef _WIN32
 #else
+
+class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
+ public:
+  server(void)
+      //
+      //
+      //
+      : io_service_(internal::get_io_service(-1)) {}
+
+  ~server(void) { stop(); }
+
+ public:
+  typedef std::function<void(std::vector<char>, int)> async_receive_callback_t;
+
+ private:
+  void on_read(int) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    int result = -1;
+    std::vector<char> buffer;
+
+    buffer.reserve(internal::BUFFER_SIZE);
+
+    try {
+      result = socket_.recvfrom(buffer);
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+    }
+
+    if (callback_) {
+      callback_(std::move(buffer), result);
+    }
+  }
+
+ public:
+  void async_recvfrom(const async_receive_callback_t &callback) {
+    if (!socket_.bound()) {
+      throw std::logic_error(
+          "hermes::network::udp::server: You need to bind the server before.");
+    }
+
+    if (callback) {
+      callback_ = callback;
+    } else {
+      throw std::invalid_argument(
+          "hermes::network::udp::server: You must provide a callback.");
+    }
+  }
+
+  void bind(const std::string &host, unsigned int port) {
+    if (is_running()) {
+      throw std::logic_error(
+          "hermes::network::udp::server is already running.");
+    }
+
+    socket_.bind(host, port);
+    io_service_->subscribe<udp::socket>(socket_);
+    io_service_->on_read<udp::socket>(
+        socket_, std::bind(&server::on_read, this, std::placeholders::_1));
+    is_running_ = 1;
+  }
+
+  void stop() {
+    if (!is_running()) {
+      throw std::logic_error("hermes::network::udp::server is not running.");
+    }
+
+    is_running_ = 0;
+    io_service_->unsubscribe<udp::socket>(socket_);
+    io_service_->wait_for_unsubscription<udp::socket>(socket_);
+    socket_.close();
+  }
+
+ public:
+  const std::shared_ptr<internal::io_service> &io_service(void) const {
+    return io_service_;
+  }
+
+  bool is_running(void) const { return is_running_ == 1; }
+
+  const udp::socket &get_socket(void) const { return socket_; }
+
+ private:
+  async_receive_callback_t callback_;
+
+  std::shared_ptr<internal::io_service> io_service_;
+
+  std::atomic<char> is_running_ = ATOMIC_VAR_INIT(false);
+
+  std::mutex mutex_;
+
+  udp::socket socket_;
+};
 #endif
 }  // namespace udp
 

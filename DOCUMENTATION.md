@@ -39,7 +39,7 @@ g++ -std=c++11 your_file.cpp -pthread -o binary_name
 
   - [Server](docs/UDP_SERVER.md)
     - public API
-    - example: Hello world!
+    - example: Asynchronous UDP server
 
   - [Client](docs/UDP_CLIENT.md)
     - public API
