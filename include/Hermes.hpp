@@ -698,19 +698,15 @@ namespace tcp {
 
 class client {
  public:
-  client(void) : disconnection_handler_(nullptr) {
-    io_service_ = internal::get_io_service(-1);
-  }
+  client(void) { io_service_ = internal::get_io_service(-1); }
 
   explicit client(socket &&socket)
-      : disconnection_handler_(nullptr),
-        io_service_(internal::get_io_service(-1)),
-        socket_(std::move(socket)) {
+      : io_service_(internal::get_io_service(-1)), socket_(std::move(socket)) {
     is_connected_ = true;
     io_service_->subscribe<tcp::socket>(socket_);
   }
 
-  ~client(void) { disconnect(true); }
+  ~client(void) { disconnect(); }
 
   client(const client &) = delete;
   client &operator=(const client &) = delete;
@@ -721,16 +717,8 @@ class client {
 
   typedef std::function<void(bool &, std::size_t &)> async_write_callback_t;
 
-  typedef std::function<void()> disconnection_handler_t;
-
  private:
-  void call_disconnection_handler(void) {
-    if (disconnection_handler_) {
-      disconnection_handler_();
-    }
-  }
-
-  async_read_callback_t process_read(bool &success, std::vector<char> &buffer) {
+  async_read_callback_t _receive(bool &success, std::vector<char> &buffer) {
     std::lock_guard<std::mutex> lock(read_requests_mutex_);
 
     if (read_requests_.empty()) {
@@ -756,7 +744,7 @@ class client {
     return callback;
   }
 
-  async_write_callback_t process_write(bool &success, std::size_t &size) {
+  async_write_callback_t _send(bool &success, std::size_t &size) {
     std::lock_guard<std::mutex> lock(write_requests_mutex_);
 
     if (write_requests_.empty()) {
@@ -785,7 +773,7 @@ class client {
   void on_read(int) {
     bool success;
     std::vector<char> buffer;
-    auto callback = process_read(success, buffer);
+    auto callback = _receive(success, buffer);
 
     if (!success) {
       disconnect();
@@ -794,16 +782,12 @@ class client {
     if (callback) {
       callback(success, buffer);
     }
-
-    if (!success) {
-      call_disconnection_handler();
-    }
   }
 
   void on_write(int) {
     bool success;
     std::size_t size;
-    auto callback = process_write(success, size);
+    auto callback = _send(success, size);
 
     if (!success) {
       disconnect();
@@ -811,10 +795,6 @@ class client {
 
     if (callback) {
       callback(success, size);
-    }
-
-    if (!success) {
-      call_disconnection_handler();
     }
   }
 
@@ -828,7 +808,7 @@ class client {
           socket_, std::bind(&client::on_read, this, std::placeholders::_1));
       read_requests_.push(std::make_pair(size, callback));
     } else {
-      throw std::logic_error("hermes::network::tcp::client is disconnected.");
+      throw std::logic_error("hermes::network::tcp::client is not connected.");
     }
   }
 
@@ -841,7 +821,7 @@ class client {
           socket_, std::bind(&client::on_write, this, std::placeholders::_1));
       write_requests_.push(std::make_pair(data, callback));
     } else {
-      throw std::logic_error("hermes::network::tcp::client is disconnected.");
+      throw std::logic_error("hermes::network::tcp::client is not connected.");
     }
   }
 
@@ -862,7 +842,7 @@ class client {
     is_connected_ = true;
   }
 
-  void disconnect(bool wait_for_removal = false) {
+  void disconnect() {
     if (!is_connected()) {
       throw std::logic_error(
           "hermes::network::tcp::client is already disconnected.");
@@ -883,10 +863,7 @@ class client {
     }
 
     io_service_->unsubscribe<tcp::socket>(socket_);
-    if (wait_for_removal) {
-      io_service_->wait_for_unsubscription<tcp::socket>(socket_);
-    }
-
+    io_service_->wait_for_unsubscription<tcp::socket>(socket_);
     socket_.close();
   }
 
@@ -903,12 +880,7 @@ class client {
 
   const tcp::socket &socket(void) const { return socket_; }
 
-  // void set_on_disconnection_handler(
-  //     const disconnection_handler_t &disconnection_handler);
-
  private:
-  disconnection_handler_t disconnection_handler_;
-
   std::shared_ptr<internal::io_service> io_service_;
 
   std::atomic<bool> is_connected_ = ATOMIC_VAR_INIT(false);
@@ -936,7 +908,7 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   ~server(void) { stop(); }
 
  private:
-  void on_read(int) {
+  void on_connection_available(int) {
     try {
       auto client = std::make_shared<tcp::client>(socket_.accept());
       conn_callback_(client);
@@ -945,19 +917,6 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       stop();
     }
   }
-
-  // void on_client_disconnected(const std::shared_ptr<client> &client) {
-  //   if (!is_running()) {
-  //     return;
-  //   }
-
-  //   std::lock_guard<std::mutex> lock(mutex_);
-  //   auto it = std::find(clients_.begin(), clients_.end(), client);
-
-  //   if (it != clients_.end()) {
-  //     clients_.erase(it);
-  //   }
-  // }
 
  public:
   typedef std::function<void(const std::shared_ptr<client> &)>
@@ -992,30 +951,24 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     socket_.listen(max_conn);
     io_service_->subscribe<tcp::socket>(socket_);
     io_service_->on_read<tcp::socket>(
-        socket_, std::bind(&server::on_read, this, std::placeholders::_1));
+        socket_, std::bind(&server::on_connection_available, this,
+                           std::placeholders::_1));
     is_running_ = 1;
   }
 
-  //
-  //
-  //
-  void stop(bool wait_for_removal = false,
-            bool recursive_wait_for_removal = true) {
+  void stop() {
     if (!is_running()) {
-      return;
+      throw std::logic_error("hermes::network::tcp::server is not running.");
     }
 
     is_running_ = 0;
-
     io_service_->unsubscribe<tcp::socket>(socket_);
-    if (wait_for_removal) {
-      io_service_->wait_for_unsubscription<tcp::socket>(socket_);
-    }
+    io_service_->wait_for_unsubscription<tcp::socket>(socket_);
     socket_.close();
 
     std::lock_guard<std::mutex> lock(mutex_);
     for (auto &client : clients_) {
-      client->disconnect(recursive_wait_for_removal && wait_for_removal);
+      client->disconnect();
     }
     clients_.clear();
   }
