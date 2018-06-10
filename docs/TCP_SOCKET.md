@@ -70,7 +70,7 @@ Basic abstraction of the TCP socket features for unix and windows socket. The TC
   void send(const std::vector<char> &data, std::size_t size);
 
   // Receives data.
-  std::vector<char> receive(std::size_t size_to_read = hermes::tools::BUFFER_SIZE);
+  std::vector<char> receive(std::size_t size_to_read = hermes::internal::BUFFER_SIZE);
 
   //
   // Common operations.

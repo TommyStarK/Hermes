@@ -2,19 +2,50 @@
 
 using namespace hermes::network;
 
-int main(void) {
-  udp::server server;
+int main(int ac, char **av) {
+  udp::client client;
 
-  server.bind("", 27017);
+  if (ac != 2) {
+      std::cerr << "[Usage]: ./binary_name host.\n";
+      return 1;
+  }
 
-  server.async_recvfrom([](std::vector<char> buffer, int bytes_received) {
-    std::cout << "bytes received: " << buffer.data();
-    std::cout << "number bytes received: " << bytes_received << std::endl;
+  client.init(av[1], 27017, true);
+  client.async_broadcast("Hello world!\n", [](int bytes_sent) {
+    std::cout << "Number of bytes sent: " << bytes_sent << std::endl;
   });
 
   hermes::signal::wait_for(SIGINT);
   return 0;
 }
+
+
+// int main(void) {
+//   udp::client client;
+
+//   client.init("127.0.0.1", 27017, false);
+
+//   client.async_send("Hello world!\n", [](int bytes_sent) {
+//     std::cout << "Number of bytes sent: " << bytes_sent << std::endl;
+//   });
+
+//   hermes::signal::wait_for(SIGINT);
+//   return 0;
+// }
+
+// int main(void) {
+//   udp::server server;
+
+//   server.bind("", 27017);
+
+//   server.async_recvfrom([](std::vector<char> buffer, int bytes_received) {
+//     std::cout << "bytes received: " << buffer.data();
+//     std::cout << "number bytes received: " << bytes_received << std::endl;
+//   });
+
+//   hermes::signal::wait_for(SIGINT);
+//   return 0;
+// }
 
 // void on_read(tcp::client& client, bool& success, std::vector<char>& buffer) {
 //   if (success) {

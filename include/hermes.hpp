@@ -379,6 +379,9 @@ class socket {
       if (::close(fd_) == -1) {
         throw std::runtime_error("close() failed.");
       }
+
+      fd_ = -1;
+      bound_ = 0;
     }
   }
 
@@ -526,6 +529,9 @@ class socket {
       if (::close(fd_) == -1) {
         throw std::runtime_error("close() failed.");
       }
+
+      fd_ = -1;
+      bound_ = 0;
     }
   }
 
@@ -1195,6 +1201,133 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 namespace udp {
 #ifdef _WIN32
 #else
+
+class client {
+ public:
+  client(void)
+      : broadcast_mode_(false), io_service_(internal::get_io_service(-1)) {}
+
+  ~client(void) { stop(); }
+
+ public:
+  typedef std::function<void(int)> async_send_callback_t;
+
+ public:
+  bool broadcast_mode_enabled(void) const { return broadcast_mode_; }
+
+  const udp::socket &get_socket(void) const { return socket_; }
+
+ private:
+  void on_send(int) {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    if (send_requests_.empty()) {
+      return;
+    }
+
+    int result = -1;
+    auto request = send_requests_.front();
+    auto buffer = request.first;
+    auto callback = request.second;
+
+    try {
+      if (broadcast_mode_) {
+        result = socket_.broadcast(buffer, buffer.size());
+      } else {
+        result = socket_.sendto(buffer, buffer.size());
+      }
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+    }
+
+    send_requests_.pop();
+
+    if (callback) {
+      callback(result);
+    }
+  }
+
+ public:
+  void init(const std::string host, unsigned int port, bool broadcast_mode) {
+    socket_.init_datagram_socket(host, port, broadcast_mode);
+    broadcast_mode_ = broadcast_mode;
+    io_service_->subscribe<udp::socket>(socket_);
+  }
+
+  void async_send(const std::string &str,
+                  const async_send_callback_t &callback) {
+    async_send(std::vector<char>(str.begin(), str.end()), callback);
+  }
+
+  void async_send(const std::vector<char> &data,
+                  const async_send_callback_t &callback) {
+    if (broadcast_mode_enabled()) {
+      throw std::logic_error(
+          "hermes::network::udp::client: Broadcast mode enabled. Use "
+          "'async_broadcast'.");
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (callback) {
+      send_requests_.push(std::make_pair(data, callback));
+      io_service_->on_write<udp::socket>(
+          socket_, std::bind(&client::on_send, this, std::placeholders::_1));
+
+    } else {
+      throw std::invalid_argument(
+          "hermes::network::udp::client: You must provide a callback.");
+    }
+  }
+
+  void async_broadcast(const std::string &str,
+                       const async_send_callback_t &callback) {
+    async_broadcast(std::vector<char>(str.begin(), str.end()), callback);
+  }
+
+  void async_broadcast(const std::vector<char> &data,
+                       const async_send_callback_t &callback) {
+    if (!broadcast_mode_enabled()) {
+      throw std::logic_error(
+          "hermes::network::udp::client: Broadcast mode disabled. Use "
+          "'async_send'.");
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (callback) {
+      send_requests_.push(std::make_pair(data, callback));
+      io_service_->on_write<udp::socket>(
+          socket_, std::bind(&client::on_send, this, std::placeholders::_1));
+    } else {
+      throw std::invalid_argument(
+          "hermes::network::udp::client: You must provide a callback");
+    }
+  }
+
+  void stop(void) {
+    broadcast_mode_ = false;
+    io_service_->unsubscribe<udp::socket>(socket_);
+    io_service_->wait_for_unsubscription<udp::socket>(socket_);
+    try {
+      socket_.close();
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+    }
+  }
+
+ private:
+  std::atomic<bool> broadcast_mode_ = ATOMIC_VAR_INIT(false);
+
+  std::shared_ptr<internal::io_service> io_service_;
+
+  std::mutex mutex_;
+
+  std::queue<std::pair<std::vector<char>, async_send_callback_t> >
+      send_requests_;
+
+  udp::socket socket_;
+};
 
 class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:

@@ -79,7 +79,7 @@ when the socket is ready for read or write data. Callbacks must be provided for 
     
     try {
       client.connect("127.0.0.1", 27017);
-      client.async_read(1024, std::bind(&on_read, std::ref(client), std::placeholders::_1, std::placeholders::_2));
+      client.async_read(4096, std::bind(&on_read, std::ref(client), std::placeholders::_1, std::placeholders::_2));
     } catch(const std::exception& e) {
       std::cerr << e.what() << '\n';
       return 1;
