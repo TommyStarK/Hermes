@@ -8,8 +8,8 @@
 #include <unistd.h>
 #endif  // _WIN32
 
-#include <string.h>
 #include <assert.h>
+#include <string.h>
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
@@ -881,7 +881,7 @@ class client {
 
   unsigned int port(void) const { return socket_.port(); }
 
-  tcp::socket &socket(void) { return socket_; }
+  const tcp::socket &get_socket(void) const { return socket_; }
 
  private:
   std::shared_ptr<internal::io_service> io_service_;
@@ -987,7 +987,7 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
 
   bool is_running(void) const { return is_running_ == 1; }
 
-  const tcp::socket &socket(void) const { return socket_; }
+  const tcp::socket &get_socket(void) const { return socket_; }
 
  private:
   std::list<std::shared_ptr<client> > clients_;
