@@ -2,13 +2,14 @@
 
 #ifdef _WIN32
 #else
-#include <stdio.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 #endif  // _WIN32
 
+#include <string.h>
+#include <assert.h>
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
@@ -880,7 +881,7 @@ class client {
 
   unsigned int port(void) const { return socket_.port(); }
 
-  const tcp::socket &socket(void) const { return socket_; }
+  const tcp::socket &socket(void) { return socket_; }
 
  private:
   std::shared_ptr<internal::io_service> io_service_;
