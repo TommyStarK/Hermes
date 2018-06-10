@@ -881,7 +881,7 @@ class client {
 
   unsigned int port(void) const { return socket_.port(); }
 
-  const tcp::socket &socket(void) { return socket_; }
+  tcp::socket &socket(void) { return socket_; }
 
  private:
   std::shared_ptr<internal::io_service> io_service_;

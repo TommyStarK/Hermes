@@ -51,7 +51,7 @@ when the socket is ready for read or write data. Callbacks must be provided for 
   unsigned int port(void) const;
 
   // Returns the client's socket.
-  const socket &socket(void) const;
+  socket &socket(void);
 
 ```
 
