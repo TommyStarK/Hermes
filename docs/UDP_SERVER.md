@@ -37,7 +37,7 @@ const socket &get_socket(void) const;
 void bind(const std::string &host, unsigned int port);
 
 // Asynchronous receive of data.
-void async_recvfrom(const async_receive_callback &callback);
+void async_recvfrom(const async_receive_callback_t &callback);
 
 // Stop the server.
 // Method called in the server's destructor.
