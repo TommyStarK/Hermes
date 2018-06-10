@@ -716,21 +716,12 @@ class client {
   client &operator=(const client &) = delete;
 
  public:
-  typedef std::function<void(bool&, std::vector<char>&)> async_read_callback_t;
+  typedef std::function<void(bool &, std::vector<char> &)>
+      async_read_callback_t;
 
-  typedef std::function<void(bool&, std::size_t&)> async_write_callback_t;
+  typedef std::function<void(bool &, std::size_t &)> async_write_callback_t;
 
   typedef std::function<void()> disconnection_handler_t;
-
-  struct read_request {
-    std::size_t size;
-    async_read_callback_t async_read_callback;
-  };
-
-  struct write_request {
-    std::vector<char> buffer;
-    async_write_callback_t async_write_callback;
-  };
 
  private:
   void call_disconnection_handler(void) {
@@ -739,7 +730,59 @@ class client {
     }
   }
 
-  void on_read_available(int) {
+  async_read_callback_t process_read(bool &success, std::vector<char> &buffer) {
+    std::lock_guard<std::mutex> lock(read_requests_mutex_);
+
+    if (read_requests_.empty()) {
+      return nullptr;
+    }
+
+    const auto &request = read_requests_.front();
+    auto callback = request.second;
+
+    try {
+      buffer = socket_.receive(request.first);
+      success = true;
+    } catch (const std::exception &) {
+      success = false;
+    }
+
+    read_requests_.pop();
+
+    if (read_requests_.empty()) {
+      io_service_->on_read<tcp::socket>(socket_, nullptr);
+    }
+
+    return callback;
+  }
+
+  async_write_callback_t process_write(bool &success, std::size_t &size) {
+    std::lock_guard<std::mutex> lock(write_requests_mutex_);
+
+    if (write_requests_.empty()) {
+      return nullptr;
+    }
+
+    const auto &request = write_requests_.front();
+    auto callback = request.second;
+
+    try {
+      size = socket_.send(request.first, request.first.size());
+      success = true;
+    } catch (const std::exception &) {
+      success = false;
+    }
+
+    write_requests_.pop();
+
+    if (write_requests_.empty()) {
+      io_service_->on_write<tcp::socket>(socket_, nullptr);
+    }
+
+    return callback;
+  }
+
+  void on_read(int) {
     bool success;
     std::vector<char> buffer;
     auto callback = process_read(success, buffer);
@@ -757,7 +800,7 @@ class client {
     }
   }
 
-  void on_write_available(int) {
+  void on_write(int) {
     bool success;
     std::size_t size;
     auto callback = process_write(success, size);
@@ -775,100 +818,37 @@ class client {
     }
   }
 
-  void clear_read_requests(void) {
-    std::lock_guard<std::mutex> lock(read_requests_mutex_);
-
-    std::queue<read_request> empty;
-    std::swap(read_requests_, empty);
-  }
-
-  void clear_write_requests(void) {
-    std::lock_guard<std::mutex> lock(write_requests_mutex_);
-
-    std::queue<write_request> empty;
-    std::swap(write_requests_, empty);
-  }
-
-  async_read_callback_t process_read(bool &success, std::vector<char>& buffer) {
-    std::lock_guard<std::mutex> lock(read_requests_mutex_);
-
-    if (read_requests_.empty()) {
-      return nullptr;
-    }
-
-    const auto &request = read_requests_.front();
-    auto callback = request.async_read_callback;
-
-    try {
-      buffer = socket_.receive(request.size);
-      success = true;
-    } catch (const std::exception &) {
-      success = false;
-    }
-
-    read_requests_.pop();
-
-    if (read_requests_.empty()) {
-      io_service_->on_read<tcp::socket>(socket_, nullptr);
-    }
-
-    return callback;
-  }
-
-  async_write_callback_t process_write(bool &success, std::size_t& size) {
-    std::lock_guard<std::mutex> lock(write_requests_mutex_);
-
-    if (write_requests_.empty()) {
-      return nullptr;
-    }
-
-    const auto &request = write_requests_.front();
-    auto callback = request.async_write_callback;
-
-    try {
-      size = socket_.send(request.buffer, request.buffer.size());
-      success = true;
-    } catch (const std::exception &) {
-      success = false;
-    }
-
-    write_requests_.pop();
-
-    if (write_requests_.empty()) {
-      io_service_->on_write<tcp::socket>(socket_, nullptr);
-    }
-
-    return callback;
-  }
-
  public:
-  void async_read(const read_request &request) {
+  void async_read(const std::size_t &size,
+                  const async_read_callback_t &callback) {
     std::lock_guard<std::mutex> lock(read_requests_mutex_);
 
     if (is_connected()) {
       io_service_->on_read<tcp::socket>(
-          socket_,
-          std::bind(&client::on_read_available, this, std::placeholders::_1));
-      read_requests_.push(request);
+          socket_, std::bind(&client::on_read, this, std::placeholders::_1));
+      read_requests_.push(std::make_pair(size, callback));
     } else {
+      throw std::logic_error("hermes::network::tcp::client is disconnected.");
     }
   }
 
-  void async_write(const write_request &request) {
+  void async_write(const std::vector<char> &data,
+                   const async_write_callback_t &callback) {
     std::lock_guard<std::mutex> lock(write_requests_mutex_);
 
     if (is_connected()) {
       io_service_->on_write<tcp::socket>(
-          socket_,
-          std::bind(&client::on_write_available, this, std::placeholders::_1));
-      write_requests_.push(request);
+          socket_, std::bind(&client::on_write, this, std::placeholders::_1));
+      write_requests_.push(std::make_pair(data, callback));
     } else {
+      throw std::logic_error("hermes::network::tcp::client is disconnected.");
     }
   }
 
   void connect(const std::string &host, unsigned int port) {
     if (is_connected()) {
-      return;
+      throw std::logic_error(
+          "hermes::network::tcp::client is already connected.");
     }
 
     try {
@@ -884,13 +864,23 @@ class client {
 
   void disconnect(bool wait_for_removal = false) {
     if (!is_connected()) {
-      return;
+      throw std::logic_error(
+          "hermes::network::tcp::client is already disconnected.");
     }
 
     is_connected_ = false;
 
-    clear_read_requests();
-    clear_write_requests();
+    {
+      std::lock_guard<std::mutex> lock(read_requests_mutex_);
+      std::queue<std::pair<std::size_t, async_read_callback_t> > rempty;
+      std::swap(read_requests_, rempty);
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(write_requests_mutex_);
+      std::queue<std::pair<std::vector<char>, async_write_callback_t> > wempty;
+      std::swap(write_requests_, wempty);
+    }
 
     io_service_->unsubscribe<tcp::socket>(socket_);
     if (wait_for_removal) {
@@ -925,11 +915,12 @@ class client {
 
   tcp::socket socket_;
 
-  std::queue<read_request> read_requests_;
+  std::queue<std::pair<std::size_t, async_read_callback_t> > read_requests_;
 
   std::mutex read_requests_mutex_;
 
-  std::queue<write_request> write_requests_;
+  std::queue<std::pair<std::vector<char>, async_write_callback_t> >
+      write_requests_;
 
   std::mutex write_requests_mutex_;
 };
