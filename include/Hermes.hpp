@@ -23,32 +23,7 @@
 
 namespace hermes {
 
-namespace internal {
-
-#ifdef _WIN32
-#define NOTSOCK INVALID_SOCKET
-static int TIMEOUT = INFINITE;
-#else
-#define NOTSOCK -1
-static int TIMEOUT = -1;
-#endif
-
-static unsigned int const BUFFER_SIZE = 4096;
-
-static unsigned int const DEFAULT_THREAD_POOL_SIZE = 100;
-
-class _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
- public:
-  _no_default_ctor_cpy_ctor_mv_ctor_assign_op_(
-      const _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ &) = delete;
-  _no_default_ctor_cpy_ctor_mv_ctor_assign_op_(
-      const _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ &&) = delete;
-  _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ &operator=(
-      const _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ &) = delete;
-  _no_default_ctor_cpy_ctor_mv_ctor_assign_op_() = default;
-};
-
-class signal final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
+class signal {
  public:
   static std::mutex &mutex(void) {
     static std::mutex mutex;
@@ -67,6 +42,33 @@ class signal final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     std::unique_lock<std::mutex> lock(mutex());
     condvar().wait(lock);
   }
+};
+
+namespace internal {
+
+#ifdef _WIN32
+#define NOTSOCK INVALID_SOCKET
+static int TIMEOUT = INFINITE;
+#else
+#define NOTSOCK -1
+static int TIMEOUT = -1;
+#endif
+
+static unsigned int const BUFFER_SIZE = 4096;
+
+static unsigned int const DEFAULT_THREAD_POOL_SIZE = 100;
+
+static unsigned int const MAX_CONN = 100;
+
+class _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
+ public:
+  _no_default_ctor_cpy_ctor_mv_ctor_assign_op_(
+      const _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ &) = delete;
+  _no_default_ctor_cpy_ctor_mv_ctor_assign_op_(
+      const _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ &&) = delete;
+  _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ &operator=(
+      const _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ &) = delete;
+  _no_default_ctor_cpy_ctor_mv_ctor_assign_op_() = default;
 };
 
 class thread_pool final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
@@ -485,7 +487,7 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
       while (!stop_) {
         sync();
         if (poll(const_cast<struct pollfd *>(poll_structs_.data()),
-                poll_structs_.size(), TIMEOUT) > 0) {
+                 poll_structs_.size(), TIMEOUT) > 0) {
           process();
         }
       }
@@ -949,39 +951,79 @@ class client {
   disconnection_handler_t disconnection_handler_;
 };
 
-class server {
+class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
   server(void)
-      : io_service_(internal::get_io_service(-1)),
-        new_connection_callback_(nullptr) {}
+      // 
+      // 
+      // 
+      : io_service_(internal::get_io_service(-1)), conn_callback_(nullptr) {}
 
   ~server(void) { stop(); }
 
-  server(const server &) = delete;
-  server &operator=(const server &) = delete;
+ private:
+  void on_read(int) {
+    try {
+      auto client = std::make_shared<tcp::client>(socket_.accept());
+      conn_callback_(client);
+      clients_.push_back(client);
+    } catch (const std::exception &) {
+      stop();
+    }
+  }
+
+  // void on_client_disconnected(const std::shared_ptr<client> &client) {
+  //   if (!is_running()) {
+  //     return;
+  //   }
+
+  //   std::lock_guard<std::mutex> lock(mutex_);
+  //   auto it = std::find(clients_.begin(), clients_.end(), client);
+
+  //   if (it != clients_.end()) {
+  //     clients_.erase(it);
+  //   }
+  // }
 
  public:
-  typedef std::function<bool(const std::shared_ptr<client> &)>
-      new_connection_callback_t;
+  typedef std::function<void(const std::shared_ptr<client> &)>
+      connection_callback_t;
 
-  void start(const std::string &host, unsigned int port,
-             const new_connection_callback_t &callback = nullptr) {
+  void on_connection(const connection_callback_t &callback) {
+    if (!callback) {
+      throw std::invalid_argument(
+          "hermes::network::tcp::server::on_connection: Expected const "
+          "std::function<void(const "
+          "std::shared_ptr<hermes::network::tcp::client> &)> &.");
+    }
+
+    conn_callback_ = callback;
+  }
+
+  void run(const std::string &host, unsigned int port,
+           unsigned int max_conn = internal::MAX_CONN) {
     if (is_running()) {
-      return;
+      throw std::logic_error(
+          "hermes::network::tcp::server is already running.");
+    }
+
+    if (!conn_callback_) {
+      throw std::logic_error(
+          "hermes::network::tcp::server: You must set a connection callback "
+          "before running the server. See "
+          "hermes::network::tcp::server::on_connection.");
     }
 
     socket_.bind(host, port);
-    socket_.listen(10);
-
+    socket_.listen(max_conn);
     io_service_->subscribe<tcp::socket>(socket_);
-    io_service_->on_read<tcp::socket>(
-        socket_,
-        std::bind(&server::on_read_available, this, std::placeholders::_1));
-    new_connection_callback_ = callback;
-
+    io_service_->on_read<tcp::socket>(socket_, std::bind(&server::on_read, this, std::placeholders::_1));
     is_running_ = 1;
   }
 
+  //
+  // 
+  //  
   void stop(bool wait_for_removal = false,
             bool recursive_wait_for_removal = true) {
     if (!is_running()) {
@@ -1003,64 +1045,31 @@ class server {
     clients_.clear();
   }
 
-  bool is_running(void) const { return is_running_ == 1; }
-
  public:
-  tcp::socket &get_socket(void) { return socket_; }
-
-  const tcp::socket &get_socket(void) const { return socket_; }
-
- public:
-  const std::shared_ptr<internal::io_service> &get_io_service(void) const {
-    return io_service_;
-  }
-
- public:
-  const std::list<std::shared_ptr<client> > &get_clients(void) const {
+  const std::list<std::shared_ptr<client> > &clients(void) const {
     return clients_;
   }
 
- private:
-  void on_read_available(int) {
-    try {
-      auto client = std::make_shared<tcp::client>(socket_.accept());
-
-      if (!new_connection_callback_ || !new_connection_callback_(client)) {
-        // client->set_on_disconnection_handler(
-        //     std::bind(&server::on_client_disconnected, this, client));
-        clients_.push_back(client);
-      } else {
-      }
-    } catch (const std::exception &) {
-      stop();
-    }
+  const std::shared_ptr<internal::io_service> &io_service(void) const {
+    return io_service_;
   }
 
-  void on_client_disconnected(const std::shared_ptr<client> &client) {
-    if (!is_running()) {
-      return;
-    }
+  bool is_running(void) const { return is_running_ == 1; }
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = std::find(clients_.begin(), clients_.end(), client);
-
-    if (it != clients_.end()) {
-      clients_.erase(it);
-    }
-  }
+  const tcp::socket &socket(void) const { return socket_; }
 
  private:
+  std::list<std::shared_ptr<client> > clients_;
+
   std::shared_ptr<internal::io_service> io_service_;
-
-  tcp::socket socket_;
 
   std::atomic<char> is_running_ = ATOMIC_VAR_INIT(false);
 
-  std::list<std::shared_ptr<client> > clients_;
-
   std::mutex mutex_;
 
-  new_connection_callback_t new_connection_callback_;
+  tcp::socket socket_;
+
+  connection_callback_t conn_callback_;
 };
 
 #endif
