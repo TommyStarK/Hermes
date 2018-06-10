@@ -1,9 +1,9 @@
-#include "Hermes.hpp"
+#include "hermes.hpp"
 
 using namespace hermes;
 using namespace hermes::network;
 
-void tests_tcp_socket(void) { std::cout << "Working :)\n"; }
+void tests_tcp_socket(void) { std::cout << "Work in progress :)\n"; }
 
 int __cdecl main(void) {
   tests_tcp_socket();

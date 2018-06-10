@@ -13,7 +13,7 @@ To use Hermes, you just need to include the `Hermes.hpp` header in your code.
 Assuming you want to compile a file containing some code using Hermes' features. You just need to run the following command:
 
 ```bash
-  g++ -std=c++11 your_file.cpp -pthread -o binary_name
+g++ -std=c++11 your_file.cpp -pthread -o binary_name
 ```
 
 ## Summary:
@@ -39,7 +39,7 @@ Assuming you want to compile a file containing some code using Hermes' features.
 
   - [Server](docs/UDP_SERVER.md)
     - public API
-    - example: Hello world!
+    - example: Asynchronous UDP server
 
   - [Client](docs/UDP_CLIENT.md)
     - public API

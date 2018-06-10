@@ -7,7 +7,7 @@ Basic abstraction of the TCP socket features for unix and windows socket. The TC
 
 
 ```cpp
-  #include "Hermes.hpp"
+  #include "hermes.hpp"
 
   using namespace hermes::network::tcp;
 
@@ -34,50 +34,49 @@ Basic abstraction of the TCP socket features for unix and windows socket. The TC
   //
 
   // Returns the file descriptor associated to the socket.
-  int get_fd(void) const;
+  int fd(void) const;
 
   // Returns the host associated to the socket.
-  const std::string &get_host(void) const;
+  const std::string &host(void) const;
 
   // Returns the port associated to the socket.
-  unsigned int get_port(void) const;
+  unsigned int port(void) const;
 
   // Returns true if the socket has a name assigned, false otherwise.
-  bool has_a_name_assigned(void) const;
-
+  bool bound(void) const;
 
   //
   // Server operations
   //
 
-  // Assign a name to the socket.
+  // Assigns a name to the socket.
   void bind(const std::string &host, unsigned int port);
 
-  // Mark the socket as a passive socket.
-  void listen(unsigned int backlog = hermes::tools::BACKLOG);
+  // Marks the socket as a passive socket.
+  void listen(unsigned int backlog = hermes::internal::MAX_CONN);
 
-  // Accept a new connection.
+  // Accepts a new connection.
   socket accept(void);
 
   //
   // Client operations
   //
 
-  // Connect to the given host and port.
+  // Connects to the given host and port.
   void connect(const std::string &host, unsigned int port);
 
-  // Send data.
+  // Sends data.
   void send(const std::string &data);
   void send(const std::vector<char> &data, std::size_t size);
 
-  // Receive data.
-  std::vector<char> receive(std::size_t size_to_read = hermes::tools::BUFFER_SIZE);
+  // Receives data.
+  std::vector<char> receive(std::size_t size_to_read = hermes::internal::BUFFER_SIZE);
 
   //
   // Common operations.
   //
 
-  // Close the file descriptor associated to the socket.
+  // Closes the file descriptor associated to the socket.
   void close(void);
 
 ```

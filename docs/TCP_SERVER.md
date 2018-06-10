@@ -9,7 +9,7 @@ a client is trying to connect to the server. Before running the server, you must
 
 
 ```cpp
-  #include "Hermes.hpp"
+  #include "hermes.hpp"
 
   using namespace hermes::network::tcp;
 
@@ -19,11 +19,20 @@ a client is trying to connect to the server. Before running the server, you must
   // Copy constructor.
   server(const server &server) = delete;
 
+  // Move constructor.
+  server(server&& server) = delete;
+
   // Assignment operator.
   server &operator=(const server &server) = delete;
 
   // Returns true or false whether the server is already running.
   bool is_running(void) const;
+
+  // Returns the server's clients.
+  const std::list<std::shared_ptr<client> > &clients(void) const;
+
+  // Returns the server's service.
+  const std::shared_ptr<hermes::internal::io_service> &io_service(void) const;
 
   // Returns the server's socket.
   const socket &get_socket(void) const;
@@ -32,10 +41,10 @@ a client is trying to connect to the server. Before running the server, you must
   // A callback must be provided using the 'on_connection' method before running the server.
   void on_connection(const std::function<void(const std::shared_ptr<client> &)> &callback);
 
-  // Run the server on the given host an service.
-  void run(const std::string &host, unsigned int port);
+  // Runs the server on the given host an service.
+  void run(const std::string &host, unsigned int port, unsigned int max_conn = hermes::internal::MAX_CONN);
 
-  // Stop the server.
+  // Stops the server.
   // Method called in the server's destructor.
   void stop(void);
 ```
@@ -44,39 +53,35 @@ a client is trying to connect to the server. Before running the server, you must
 
 
 ```cpp
-  #include "Hermes.hpp"
-  using namespace hermes::network::tcp;
+  #include "hermes.hpp"
 
-  void send_callback(const std::shared_ptr<client> &client, bool success, std::size_t bytes_sent) {
-    if (success)
-      std::cout << bytes_sent << std::endl;
-    else
-      client->disconnect();
-  }
+  using namespace hermes::network;
 
-  void receive_callback(const std::shared_ptr<client> &client, bool success, std::vector<char> buffer) {
+  void on_read(const std::shared_ptr<tcp::client>& client, bool& success, std::vector<char>& buffer) {
     if (success) {
-      std::cout << buffer.data();
-      client->async_send(std::string(buffer.data()), std::bind(&send_callback, client, std::placeholders::_1, std::placeholders::_2));
+      client->async_write(buffer, nullptr);
+      client->async_read(4096, std::bind(&on_read, client, std::placeholders::_1, std::placeholders::_2));
     } else {
+      std::cout << "client disconnecting...\n";
       client->disconnect();
     }
   }
 
   int main(void) {
-    server server;
+    tcp::server server;
+    
+    try {
+      server.on_connection([](const std::shared_ptr<tcp::client>& client) {
+        client->async_read(4096, std::bind(&on_read, client, std::placeholders::_1, std::placeholders::_2));
+      });
 
-    server.on_connection([](const std::shared_ptr<client> &client) {
-      client->async_receive(1024, std::bind(&receive_callback, client, std::placeholders::_1, std::placeholders::_2));
-    });
-
-    server.run("127.0.0.1", 27017);
-
-    // The calling thread will block until the specified signal is caught.
-    // @param : int signal_number
-    //
-    hermes::tools::signal::wait_for(SIGINT);
-
+      server.run("127.0.0.1", 27017);
+    } catch(const std::exception& e) {
+      std::cerr << e.what() << '\n';
+      return 1;
+    }
+    
+    hermes::signal::wait_for(SIGINT);
     return 0;
   }
 

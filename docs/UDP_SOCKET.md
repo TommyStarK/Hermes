@@ -8,7 +8,7 @@ Basic abstraction of the UDP socket features for unix and windows socket. The UD
 
 
 ```cpp
-  #include "Hermes.hpp"
+  #include "hermes.hpp"
 
   using namespace hermes::network::udp;
 
@@ -28,17 +28,17 @@ Basic abstraction of the UDP socket features for unix and windows socket. The UD
   // Basic operations
   //
 
+  // Returns true if the socket has a name assigned, false otherwise.
+  bool bound(void) const;
+
   // Returns the file descriptor associated to the socket.
-  int get_fd(void) const;
+  int fd(void) const;
 
   // Returns the host associated to the socket.
-  const std::string &get_host(void) const;
+  const std::string &host(void) const;
 
   // Returns the port associated to the socket.
-  unsigned int get_port(void) const;
-
-  // Returns true if the socket has a name assigned, false otherwise.
-  bool has_a_name_assigned(void) const;
+  unsigned int port(void) const;
 
 
   //
