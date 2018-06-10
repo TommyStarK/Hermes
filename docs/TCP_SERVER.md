@@ -28,10 +28,10 @@ a client is trying to connect to the server. Before running the server, you must
   // Returns true or false whether the server is already running.
   bool is_running(void) const;
 
-  // Returns the server's clients
+  // Returns the server's clients.
   const std::list<std::shared_ptr<client> > &clients(void) const;
 
-  // Returns the server's service
+  // Returns the server's service.
   const std::shared_ptr<hermes::internal::io_service> &io_service(void) const;
 
   // Returns the server's socket.
@@ -42,7 +42,7 @@ a client is trying to connect to the server. Before running the server, you must
   void on_connection(const std::function<void(const std::shared_ptr<client> &)> &callback);
 
   // Runs the server on the given host an service.
-  void run(const std::string &host, unsigned int port, unsigned int max_conn);
+  void run(const std::string &host, unsigned int port, unsigned int max_conn = hermes::internal::MAX_CONN);
 
   // Stops the server.
   // Method called in the server's destructor.
@@ -75,7 +75,7 @@ a client is trying to connect to the server. Before running the server, you must
         client->async_read(4096, std::bind(&on_read, client, std::placeholders::_1, std::placeholders::_2));
       });
 
-      server.run("127.0.0.1", 27017, 50);
+      server.run("127.0.0.1", 27017);
     } catch(const std::exception& e) {
       std::cerr << e.what() << '\n';
       return 1;

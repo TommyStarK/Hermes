@@ -2,6 +2,7 @@
 
 #ifdef _WIN32
 #else
+#include <stdio.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -9,6 +10,7 @@
 #endif  // _WIN32
 
 #include <atomic>
+#include <cassert>
 #include <condition_variable>
 #include <csignal>
 #include <iostream>
@@ -386,7 +388,7 @@ class socket {
     }
 
     struct addrinfo hints;
-    ::memset(&hints, 0, sizeof(hints));
+    memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     auto service = std::to_string(port);
