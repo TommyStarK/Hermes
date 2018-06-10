@@ -16,7 +16,7 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
 
 
   // The callback executed when a send operation has been performed.
-  typedef std::function<void(int)> async_send_callback;
+  typedef std::function<void(int)> async_send_callback_t;
 
   // Default constructor.
   client(void);
@@ -38,12 +38,12 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
   void init(const std::string &host, unsigned int port, bool broadcast_mode);
 
   // Asynchronous send of data.
-  void async_send(const std::string &str, const async_send_callback &callback);
-  void async_send(const std::vector<char> &data, const async_send_callback &callback);
+  void async_send(const std::string &str, const async_send_callback_t &callback);
+  void async_send(const std::vector<char> &data, const async_send_callback_t &callback);
 
   // Asynchronous broadcast of data.
-  void async_broadcast(const std::string &str, const async_send_callback &callback);
-  void async_broadcast(const std::vector<char> &data, const async_send_callback &callback);
+  void async_broadcast(const std::string &str, const async_send_callback_t &callback);
+  void async_broadcast(const std::vector<char> &data, const async_send_callback_t &callback);
 
   // Stop the client.
   // Method called in the client's destructor.
