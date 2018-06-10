@@ -7,7 +7,7 @@ Basic abstraction of the TCP socket features for unix and windows socket. The TC
 
 
 ```cpp
-  #include "Hermes.hpp"
+  #include "hermes.hpp"
 
   using namespace hermes::network::tcp;
 

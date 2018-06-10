@@ -7,7 +7,7 @@ when the socket is ready for read or write data. Callbacks must be provided for 
 ### public API:
 
 ```cpp
-  #include "Hermes.hpp"
+  #include "hermes.hpp"
 
   using namespace hermes::network::tcp;
 
@@ -60,7 +60,7 @@ when the socket is ready for read or write data. Callbacks must be provided for 
 
 
 ```cpp
-  #include "Hermes.hpp"
+  #include "hermes.hpp"
   using namespace hermes::network;
 
   void on_read(tcp::client& client, bool& success, std::vector<char>& buffer) {
