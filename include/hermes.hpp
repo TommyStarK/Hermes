@@ -433,6 +433,192 @@ class socket {
 namespace udp {
 #ifdef _WIN32
 #else
+class socket {
+ public:
+  socket(void) : bound_(false), fd_(NOTSOCK), host_(""), port_(0) {}
+
+  bool operator==(const socket &s) const { return fd_ == s.fd(); }
+
+  ~socket(void) = default;
+
+ public:
+  void init_datagram_socket(const std::string &host, unsigned int port,
+                            bool broadcasting) {
+    if (!broadcasting) {
+      create_socket(host, port);
+    } else {
+      create_broadcaster(host, port);
+    }
+  }
+
+  std::size_t sendto(const std::string &str) {
+    return sendto(std::vector<char>(str.begin(), str.end()), str.size());
+  }
+
+  std::size_t sendto(const std::vector<char> &data, std::size_t size) {
+    if (fd_ == NOTSOCK) {
+      throw std::logic_error("Datagram socket not Initialized.");
+    }
+
+    int res =
+        ::sendto(fd_, data.data(), size, 0, info_->ai_addr, info_->ai_addrlen);
+
+    if (res == -1) {
+      throw std::runtime_error("sendto() failed.");
+    }
+
+    return res;
+  }
+
+  std::size_t broadcast(const std::string &str) {
+    return broadcast(std::vector<char>(str.begin(), str.end()), str.size());
+  }
+
+  std::size_t broadcast(const std::vector<char> &data, std::size_t size) {
+    if (fd_ == NOTSOCK) {
+      throw std::logic_error("Datagram socket not Initialized.");
+    }
+
+    int res =
+        ::sendto(fd_, data.data(), size, 0, (struct sockaddr *)&broadcast_info_,
+                 sizeof(broadcast_info_));
+
+    if (res == -1) {
+      throw std::runtime_error("sendto() failed.");
+    }
+
+    return res;
+  }
+
+  void bind(const std::string &host, unsigned int port) {
+    if (bound()) {
+      throw std::logic_error("Address already assigned to the socket.");
+    }
+
+    create_socket(host, port);
+    assert(info_ && info_->ai_addr && info_->ai_addrlen);
+
+    if (::bind(fd_, info_->ai_addr, info_->ai_addrlen) == -1) {
+      throw std::runtime_error("sendto() failed.");
+    }
+
+    bound_ = true;
+  }
+
+  std::size_t recvfrom(std::vector<char> &incoming) {
+    if (!bound()) {
+      throw std::logic_error("You must bind the socket first.");
+    }
+
+    socklen_t len = sizeof(source_info_);
+    int res = ::recvfrom(fd_, incoming.data(), internal::BUFFER_SIZE - 1, 0,
+                         (struct sockaddr *)&source_info_, &len);
+
+    if (res == -1) {
+      throw std::runtime_error("recvfrom() failed.");
+    }
+
+    return res;
+  }
+
+  void close(void) {
+    if (fd_ != NOTSOCK) {
+      if (::close(fd_) == -1) {
+        throw std::runtime_error("close() failed.");
+      }
+    }
+  }
+
+ private:
+  void create_socket(const std::string &host, unsigned int port) {
+    if (fd_ != NOTSOCK) {
+      return;
+    }
+
+    struct addrinfo hints;
+    ::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = IPPROTO_UDP;
+    hints.ai_flags = AI_PASSIVE;
+    auto service = std::to_string(port);
+
+    int status = ::getaddrinfo(!host.compare("") ? NULL : host.c_str(),
+                               service.c_str(), &hints, &info_);
+
+    if (status != 0) {
+      throw std::runtime_error("getaddrinfo() failed.");
+    }
+
+    for (auto p = info_; p != NULL; p = p->ai_next) {
+      if ((fd_ = ::socket(p->ai_family, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
+        continue;
+      }
+
+      info_ = p;
+      break;
+    }
+
+    if (fd_ == NOTSOCK) {
+      throw std::runtime_error("getaddrinfo() failed.");
+    }
+
+    host_ = host;
+    port_ = port;
+  }
+
+  void create_broadcaster(const std::string &host, unsigned int port) {
+    if (fd_ != NOTSOCK) {
+      return;
+    }
+
+    int b = 1;
+    struct hostent *hostent;
+
+    if ((hostent = ::gethostbyname(host.c_str())) == NULL) {
+      throw std::runtime_error("gethostbyname() failed.");
+    }
+
+    if ((fd_ = ::socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
+      throw std::runtime_error("socket() failed.");
+    }
+
+    if (::setsockopt(fd_, SOL_SOCKET, SO_BROADCAST, &b, sizeof(int)) == -1) {
+      throw std::runtime_error("setsockopt() failed.");
+    }
+
+    host_ = host;
+    port_ = port;
+    broadcast_info_.sin_family = AF_INET;
+    broadcast_info_.sin_port = htons(port_);
+    broadcast_info_.sin_addr = *((struct in_addr *)hostent->h_addr);
+    ::memset(broadcast_info_.sin_zero, '\0', sizeof(broadcast_info_.sin_zero));
+  }
+
+ public:
+  bool bound(void) const { return bound_; }
+
+  int fd(void) const { return fd_; }
+
+  const std::string &host(void) const { return host_; }
+
+  unsigned int port(void) const { return port_; }
+
+ private:
+  bool bound_;
+
+  struct sockaddr_in broadcast_info_;
+
+  int fd_;
+
+  struct addrinfo *info_;
+
+  std::string host_;
+
+  unsigned int port_;
+
+  struct sockaddr_storage source_info_;
+};
 #endif  // _WIN32
 }  // namespace udp
 
