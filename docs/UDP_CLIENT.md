@@ -68,7 +68,7 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
       std::cout << "Number of bytes sent: " << bytes_sent << std::endl;
     });
 
-    hermes::tools::signal::wait_for(SIGINT);
+    hermes::signal::wait_for(SIGINT);
     return 0;
   }
 
@@ -98,7 +98,7 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
     	std::cout << "Number of bytes sent: " << bytes_sent << std::endl;
     });
 
-    hermes::tools::signal::wait_for(SIGINT);
+    hermes::signal::wait_for(SIGINT);
     return 0;
   }
 ```
