@@ -379,6 +379,7 @@ class socket {
       if (::close(fd_) == -1) {
         throw std::runtime_error("close() failed.");
       }
+			// ::close(fd_);
 
       fd_ = -1;
       bound_ = 0;
