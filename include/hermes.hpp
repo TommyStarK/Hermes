@@ -1007,6 +1007,11 @@ class client {
     }
   }
 
+	void async_write(const std::string &str,
+                  const async_write_callback_t &callback) {
+    async_write(std::vector<char>(str.begin(), str.end()), callback);
+  }
+
   void async_write(const std::vector<char> &data,
                    const async_write_callback_t &callback) {
     std::lock_guard<std::mutex> lock(write_requests_mutex_);
@@ -1039,8 +1044,9 @@ class client {
 
   void disconnect() {
     if (!is_connected()) {
-      throw std::logic_error(
-          "hermes::network::tcp::client is already disconnected.");
+      // throw std::logic_error(
+      //     "hermes::network::tcp::client is already disconnected.");
+			return;
     }
 
     is_connected_ = false;
