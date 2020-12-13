@@ -171,11 +171,11 @@ class socket_pair final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
   void close(void) {
     if (sv_[0] != NOTSOCK) {
-			::close(sv_[0]);
+	::close(sv_[0]);
     }
 
     if (sv_[1] != NOTSOCK) {
-			::close(sv_[1]);
+	::close(sv_[1]);
     }
   }
 
