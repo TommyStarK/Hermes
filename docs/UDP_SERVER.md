@@ -1,13 +1,10 @@
-## UDP Server
-
+# UDP Server
 
 The UDP server class allows to create and use an asynchronous server waiting for incoming packets on a host/port.
 The server must be bound to a given host/port before being able to wait for incoming packets. A callback must be
 provided to the 'async_recvfrom' method, it represents the server behavior when it receives data.
 
-
-### public API:
-
+## API
 
 ```cpp
 #include "hermes.hpp"
@@ -45,9 +42,7 @@ void stop(void);
 
 ```
 
-
-### Example: Asynchronous UDP server
-
+## Example: Asynchronous UDP server
 
 ```cpp
   #include "hermes.hpp"

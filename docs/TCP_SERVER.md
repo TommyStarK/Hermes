@@ -1,12 +1,9 @@
-## TCP Server
-
+# TCP Server
 
 The TCP server class allows to create and use an asynchronous server. The server is using the polling model to detect when
 a client is trying to connect to the server. Before running the server, you must provide a callback to execute in case of connection.
 
-
-### public API:
-
+## API
 
 ```cpp
   #include "hermes.hpp"
@@ -49,8 +46,7 @@ a client is trying to connect to the server. Before running the server, you must
   void stop(void);
 ```
 
-### example: Asynchronous TCP echo server.
-
+## example: Asynchronous TCP echo server
 
 ```cpp
   #include "hermes.hpp"
@@ -69,7 +65,7 @@ a client is trying to connect to the server. Before running the server, you must
 
   int main(void) {
     tcp::server server;
-    
+
     try {
       server.on_connection([](const std::shared_ptr<tcp::client>& client) {
         client->async_read(4096, std::bind(&on_read, client, std::placeholders::_1, std::placeholders::_2));
@@ -80,7 +76,7 @@ a client is trying to connect to the server. Before running the server, you must
       std::cerr << e.what() << '\n';
       return 1;
     }
-    
+
     hermes::signal::wait_for(SIGINT);
     return 0;
   }

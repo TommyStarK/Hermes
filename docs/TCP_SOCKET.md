@@ -1,10 +1,8 @@
-## TCP Socket:
+# TCP Socket
 
 Basic abstraction of the TCP socket features for unix and windows socket. The TCP socket provides blocking stream-oriented socket functionalities.
 
-
-### public API:
-
+## API
 
 ```cpp
   #include "hermes.hpp"
@@ -78,5 +76,4 @@ Basic abstraction of the TCP socket features for unix and windows socket. The TC
 
   // Closes the file descriptor associated to the socket.
   void close(void);
-
 ```

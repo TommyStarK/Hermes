@@ -1,11 +1,8 @@
-## UDP Socket
-
+# UDP Socket
 
 Basic abstraction of the UDP socket features for unix and windows socket. The UDP socket provides blocking datagram-oriented socket functionalities.
 
-
-### public API:
-
+## API
 
 ```cpp
   #include "hermes.hpp"
@@ -73,5 +70,4 @@ Basic abstraction of the UDP socket features for unix and windows socket. The UD
 
   // Close the file descriptor associated to the socket.
   void close(void);
-
 ```

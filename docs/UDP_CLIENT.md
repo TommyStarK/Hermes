@@ -1,13 +1,10 @@
-## UDP client
-
+# UDP client
 
 The UDP client allows to create and use an asynchronous client. The UDP client can send packets to a given host/port
 or broadcast them to many machines. A callback must be provided to use the 'async_send' or 'async_broadcast' methods.
 If you enabled the broadcast mode, please use the 'async_broadcast' method to broadcast packets.
 
-
-### public API
-
+## API
 
 ```cpp
   #include "hermes.hpp"
@@ -50,9 +47,7 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
   void stop(void);
 ```
 
-
 ### Example: "Hello world!"
-
 
 ```cpp
   #include "hermes.hpp"
@@ -71,13 +66,9 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
     hermes::signal::wait_for(SIGINT);
     return 0;
   }
-
 ```
 
-
 ### Example: Broadcasting "Hello world!"
-
-
 
 ```cpp
   #include "hermes.hpp"
