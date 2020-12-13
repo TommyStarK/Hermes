@@ -9,7 +9,7 @@
 
 
 
-`Hermes` is a lightweight, cross-platform, thread-safe, asynchronous, `C++11` network library.
+`Hermes` is a lightweight, cross-platform (not yet), thread-safe, asynchronous, `C++11` network library.
 
 ## Requirement
 
@@ -38,5 +38,5 @@ A [Full documentation](https://github.com/TommyStarK/Hermes/blob/master/DOCUMENT
 
 ## Contribution
 
-Each Contribution is welcomed and encouraged. I do not claim to cover each use cases nor completely master the c++. If you encounter a non sense or
+Each Contribution is welcomed and encouraged. I do not claim to cover each use cases nor completely master the C++. If you encounter a non sense or
 any trouble, you can open an issue and I will be happy to discuss about it.
