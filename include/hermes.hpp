@@ -975,7 +975,7 @@ class client final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     }
   }
 
-	void async_write(const std::string &str, const async_write_callback_t &callback) {
+  void async_write(const std::string &str, const async_write_callback_t &callback) {
     async_write(std::vector<char>(str.begin(), str.end()), callback);
   }
 
@@ -1009,22 +1009,21 @@ class client final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   void disconnect() {
     if (!is_connected()) {
       is_connected_ = false;
+      {
+	std::lock_guard<std::mutex> lock(read_requests_mutex_);
+	std::queue<std::pair<std::size_t, async_read_callback_t> > rempty;
+	std::swap(read_requests_, rempty);
+      }
 
-			{
-				std::lock_guard<std::mutex> lock(read_requests_mutex_);
-				std::queue<std::pair<std::size_t, async_read_callback_t> > rempty;
-				std::swap(read_requests_, rempty);
-			}
+      {
+        std::lock_guard<std::mutex> lock(write_requests_mutex_);
+	std::queue<std::pair<std::vector<char>, async_write_callback_t> > wempty;
+        std::swap(write_requests_, wempty);
+      }
 
-			{
-				std::lock_guard<std::mutex> lock(write_requests_mutex_);
-				std::queue<std::pair<std::vector<char>, async_write_callback_t> > wempty;
-				std::swap(write_requests_, wempty);
-			}
-
-			io_service_->unsubscribe<tcp::socket>(socket_);
-			io_service_->wait_for_unsubscription<tcp::socket>(socket_);
-			socket_.close();
+      io_service_->unsubscribe<tcp::socket>(socket_);
+      io_service_->wait_for_unsubscription<tcp::socket>(socket_);
+      socket_.close();
     }
   }
 
@@ -1108,16 +1107,16 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   void stop() {
     if (is_running()) {
       is_running_ = 0;
-			io_service_->unsubscribe<tcp::socket>(socket_);
-			io_service_->wait_for_unsubscription<tcp::socket>(socket_);
-			socket_.close();
+      io_service_->unsubscribe<tcp::socket>(socket_);
+      io_service_->wait_for_unsubscription<tcp::socket>(socket_);
+      socket_.close();
 
-			std::lock_guard<std::mutex> lock(mutex_);
-			for (auto &client : clients_) {
-				client->disconnect();
-			}
+      std::lock_guard<std::mutex> lock(mutex_);
+      for (auto &client : clients_) {
+	client->disconnect();
+      }
 
-			clients_.clear();
+     clients_.clear();
     }
   }
 
@@ -1318,9 +1317,9 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   void stop() {
     if (is_running()) {
       is_running_ = 0;
-			io_service_->unsubscribe<udp::socket>(socket_);
-			io_service_->wait_for_unsubscription<udp::socket>(socket_);
-			socket_.close();
+      io_service_->unsubscribe<udp::socket>(socket_);
+      io_service_->wait_for_unsubscription<udp::socket>(socket_);
+      socket_.close();
     }
   }
 
