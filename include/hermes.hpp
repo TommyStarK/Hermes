@@ -223,7 +223,7 @@ class socket {
 
   bool operator==(const socket &s) const { return fd_ == s.fd(); }
 
-  ~socket(void) = default;
+  ~socket(void) { close(); }
 
  public:
   bool bound(void) const { return bound_; }
@@ -361,7 +361,7 @@ class socket {
   void close(void) {
     if (fd_ != NOTSOCK) {
       if (::close(fd_) == -1) {
-        throw std::runtime_error("tcp socket close() failed.");
+        throw std::runtime_error("close() failed.");
       }
 
       fd_ = -1;
@@ -389,8 +389,8 @@ class socket {
 
     for (auto p = info_; p != NULL; p = p->ai_next) {
       if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-				continue;
-			}
+	continue;
+      }
 
       info_ = p;
       break;
@@ -427,7 +427,7 @@ class socket {
 
   bool operator==(const socket &s) const { return fd_ == s.fd(); }
 
-	~socket(void) { close(); }
+  ~socket(void) { close(); }
 
  public:
   void init_datagram_socket(const std::string &host, unsigned int port, bool broadcasting) {
@@ -444,7 +444,7 @@ class socket {
 
   std::size_t sendto(const std::vector<char> &data, std::size_t size) {
     if (fd_ == NOTSOCK) {
-      throw std::logic_error("Datagram socket not Initialized.");
+      throw std::logic_error("Datagram socket not initialized.");
     }
 
     int res = ::sendto(fd_, data.data(), size, 0, info_->ai_addr, info_->ai_addrlen);
@@ -482,7 +482,7 @@ class socket {
     create_socket(host, port);
     assert(info_ && info_->ai_addr && info_->ai_addrlen);
     if (::bind(fd_, info_->ai_addr, info_->ai_addrlen) == -1) {
-      throw std::runtime_error("sendto() failed.");
+      throw std::runtime_error("bind() failed.");
     }
 
     bound_ = true;
@@ -506,7 +506,7 @@ class socket {
   void close(void) {
     if (fd_ != NOTSOCK) {
       if (::close(fd_) == -1) {
-        throw std::runtime_error("udp socket close() failed.");
+        throw std::runtime_error("close() failed.");
       }
 
       fd_ = -1;
