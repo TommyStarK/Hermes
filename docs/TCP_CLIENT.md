@@ -22,12 +22,12 @@ when the socket is ready for read or write data. Callbacks must be provided for 
 
   // Copy consructor.
   client(const client &) = delete;
- 
-  // Assignment operator.  
+
+  // Assignment operator.
   client &operator=(const client &) = delete;
 
-  
-  
+
+
   // Connects the client to the given host and service.
   void connect(const std::string &host, unsigned int port);
 
@@ -35,14 +35,15 @@ when the socket is ready for read or write data. Callbacks must be provided for 
   void async_read(const std::size_t &size, const async_read_callback_t &callback);
 
   // Asynchronous send of data.
+  void async_write(const std::string &data, const async_write_callback_t &callback);
   void async_write(const std::vector<char> &data, const async_write_callback_t &callback);
 
 
   // Disconnects the client.
   void disconnect();
 
-  
-  
+
+
   // Returns the host to which the client is connected.
   const std::string &host(void) const;
 
@@ -81,7 +82,7 @@ when the socket is ready for read or write data. Callbacks must be provided for 
 
   int main(void) {
     tcp::client client;
-    
+
     try {
       client.connect("127.0.0.1", 27017);
       client.async_read(4096, std::bind(&on_read, std::ref(client), std::placeholders::_1, std::placeholders::_2));

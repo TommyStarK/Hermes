@@ -1,3 +1,3 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-mkdir build ; cd build ; cmake ../ ; make ; ./tests_hermes ; cd ../ ;
+rm -rf build && mkdir build && cd build && cmake .. && make && ./tests_hermes && cd ../ ;

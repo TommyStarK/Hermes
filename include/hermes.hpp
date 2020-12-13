@@ -171,15 +171,11 @@ class socket_pair final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
   void close(void) {
     if (sv_[0] != NOTSOCK) {
-      if (::close(sv_[0]) == -1) {
-        throw std::runtime_error("close() failed.");
-      }
+			::close(sv_[0]);
     }
 
     if (sv_[1] != NOTSOCK) {
-      if (::close(sv_[1]) == -1) {
-        throw std::runtime_error("close() failed.");
-      }
+			::close(sv_[1]);
     }
   }
 
@@ -264,9 +260,7 @@ class socket {
 
   void listen(unsigned int backlog) {
     if (!bound()) {
-      throw std::logic_error(
-          "Use the member function 'bind' before using 'listen' to mark the "
-          "socket as passive.");
+      throw std::logic_error("Use the member function 'bind' before using 'listen' to mark the socket as passive.");
     }
 
     if (backlog > SOMAXCONN) {
@@ -287,9 +281,7 @@ class socket {
     struct sockaddr_storage client;
 
     if (fd_ == NOTSOCK) {
-      throw std::logic_error(
-          "Use the member functions 'bind' then 'listen' before "
-          "accepting a new connection");
+      throw std::logic_error("Use the member functions 'bind' then 'listen' before accepting a new connection");
     }
 
     socklen_t size = sizeof(client);
@@ -299,8 +291,7 @@ class socket {
       throw std::runtime_error("accept() failed.");
     }
 
-    int res = getnameinfo((struct sockaddr *)&client, size, host, sizeof(host),
-                          port, sizeof(port), NI_NUMERICHOST | NI_NUMERICSERV);
+    int res = getnameinfo((struct sockaddr *)&client, size, host, sizeof(host), port, sizeof(port), NI_NUMERICHOST | NI_NUMERICSERV);
 
     if (res != 0) {
       throw std::runtime_error("getnameinfo() failed.");
@@ -314,9 +305,7 @@ class socket {
   //
   void connect(const std::string &host, unsigned int port) {
     if (bound()) {
-      throw std::logic_error(
-          "You cannot connect to a remote server, a socket set for a "
-          "server application.");
+      throw std::logic_error("You cannot connect to a remote server, a socket set for a server application.");
     }
 
     create_socket(host, port);
@@ -333,9 +322,7 @@ class socket {
 
   std::size_t send(const std::vector<char> &message, std::size_t message_len) {
     if (fd_ == NOTSOCK) {
-      throw std::logic_error(
-          "Use the member function 'connect' to connect to a remote "
-          "server before sending data.");
+      throw std::logic_error("Use the member function 'connect' to connect to a remote server before sending data.");
     }
 
     int res = ::send(fd_, message.data(), message_len, 0);
@@ -349,15 +336,12 @@ class socket {
 
   std::vector<char> receive(std::size_t size_to_read = internal::BUFFER_SIZE) {
     if (fd_ == NOTSOCK) {
-      throw std::logic_error(
-          "Use the member function 'connect' to connect to a remote "
-          "server before receiving data.");
+      throw std::logic_error("Use the member function 'connect' to connect to a remote server before receiving data.");
     }
 
     std::vector<char> buffer(size_to_read, 0);
 
-    int bytes_read =
-        ::recv(fd_, const_cast<char *>(buffer.data()), size_to_read, 0);
+    int bytes_read = ::recv(fd_, const_cast<char *>(buffer.data()), size_to_read, 0);
 
     switch (bytes_read) {
       case -1:
@@ -377,9 +361,8 @@ class socket {
   void close(void) {
     if (fd_ != NOTSOCK) {
       if (::close(fd_) == -1) {
-        throw std::runtime_error("close() failed.");
+        throw std::runtime_error("tcp socket close() failed.");
       }
-			// ::close(fd_);
 
       fd_ = -1;
       bound_ = 0;
@@ -405,8 +388,9 @@ class socket {
     }
 
     for (auto p = info_; p != NULL; p = p->ai_next) {
-      if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
-        continue;
+      if ((fd_ = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+				continue;
+			}
 
       info_ = p;
       break;
@@ -443,11 +427,10 @@ class socket {
 
   bool operator==(const socket &s) const { return fd_ == s.fd(); }
 
-  ~socket(void) = default;
+	~socket(void) { close(); }
 
  public:
-  void init_datagram_socket(const std::string &host, unsigned int port,
-                            bool broadcasting) {
+  void init_datagram_socket(const std::string &host, unsigned int port, bool broadcasting) {
     if (!broadcasting) {
       create_socket(host, port);
     } else {
@@ -464,8 +447,7 @@ class socket {
       throw std::logic_error("Datagram socket not Initialized.");
     }
 
-    int res =
-        ::sendto(fd_, data.data(), size, 0, info_->ai_addr, info_->ai_addrlen);
+    int res = ::sendto(fd_, data.data(), size, 0, info_->ai_addr, info_->ai_addrlen);
 
     if (res == -1) {
       throw std::runtime_error("sendto() failed.");
@@ -480,12 +462,10 @@ class socket {
 
   std::size_t broadcast(const std::vector<char> &data, std::size_t size) {
     if (fd_ == NOTSOCK) {
-      throw std::logic_error("Datagram socket not Initialized.");
+      throw std::logic_error("Datagram socket not initialized.");
     }
 
-    int res =
-        ::sendto(fd_, data.data(), size, 0, (struct sockaddr *)&broadcast_info_,
-                 sizeof(broadcast_info_));
+    int res = ::sendto(fd_, data.data(), size, 0, (struct sockaddr *)&broadcast_info_, sizeof(broadcast_info_));
 
     if (res == -1) {
       throw std::runtime_error("sendto() failed.");
@@ -501,7 +481,6 @@ class socket {
 
     create_socket(host, port);
     assert(info_ && info_->ai_addr && info_->ai_addrlen);
-
     if (::bind(fd_, info_->ai_addr, info_->ai_addrlen) == -1) {
       throw std::runtime_error("sendto() failed.");
     }
@@ -515,8 +494,7 @@ class socket {
     }
 
     socklen_t len = sizeof(source_info_);
-    int res = ::recvfrom(fd_, incoming.data(), internal::BUFFER_SIZE - 1, 0,
-                         (struct sockaddr *)&source_info_, &len);
+    int res = ::recvfrom(fd_, incoming.data(), internal::BUFFER_SIZE - 1, 0, (struct sockaddr *)&source_info_, &len);
 
     if (res == -1) {
       throw std::runtime_error("recvfrom() failed.");
@@ -528,7 +506,7 @@ class socket {
   void close(void) {
     if (fd_ != NOTSOCK) {
       if (::close(fd_) == -1) {
-        throw std::runtime_error("close() failed.");
+        throw std::runtime_error("udp socket close() failed.");
       }
 
       fd_ = -1;
@@ -549,9 +527,7 @@ class socket {
     hints.ai_protocol = IPPROTO_UDP;
     hints.ai_flags = AI_PASSIVE;
     auto service = std::to_string(port);
-
-    int status = ::getaddrinfo(!host.compare("") ? NULL : host.c_str(),
-                               service.c_str(), &hints, &info_);
+    int status = ::getaddrinfo(!host.compare("") ? NULL : host.c_str(), service.c_str(), &hints, &info_);
 
     if (status != 0) {
       throw std::runtime_error("getaddrinfo() failed.");
@@ -682,8 +658,7 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     master_ = std::thread([this] {
       while (!stop_) {
         sync();
-        if (poll(const_cast<struct pollfd *>(poll_structs_.data()),
-                 poll_structs_.size(), TIMEOUT) > 0) {
+        if (poll(const_cast<struct pollfd *>(poll_structs_.data()), poll_structs_.size(), TIMEOUT) > 0) {
           process();
         }
       }
@@ -838,8 +813,7 @@ class io_service final : _no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   template <typename T>
   void wait_for_unsubscription(const T &socket) {
     std::unique_lock<std::mutex> lock(mutex_);
-    condvar_.wait(lock,
-                  [&]() { return subs_.find(socket.fd()) == subs_.end(); });
+    condvar_.wait(lock, [&]() { return subs_.find(socket.fd()) == subs_.end(); });
   }
 
  private:
@@ -892,24 +866,19 @@ namespace tcp {
 #ifdef _WIN32
 #else
 
-class client {
+class client final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
   client(void) { io_service_ = internal::get_io_service(-1); }
 
-  explicit client(socket &&socket)
-      : io_service_(internal::get_io_service(-1)), socket_(std::move(socket)) {
+  explicit client(socket &&socket) : io_service_(internal::get_io_service(-1)), socket_(std::move(socket)) {
     is_connected_ = true;
     io_service_->subscribe<tcp::socket>(socket_);
   }
 
   ~client(void) { disconnect(); }
 
-  client(const client &) = delete;
-  client &operator=(const client &) = delete;
-
  public:
-  typedef std::function<void(bool &, std::vector<char> &)>
-      async_read_callback_t;
+  typedef std::function<void(bool &, std::vector<char> &)> async_read_callback_t;
 
   typedef std::function<void(bool &, std::size_t &)> async_write_callback_t;
 
@@ -995,31 +964,26 @@ class client {
   }
 
  public:
-  void async_read(const std::size_t &size,
-                  const async_read_callback_t &callback) {
+  void async_read(const std::size_t &size, const async_read_callback_t &callback) {
     std::lock_guard<std::mutex> lock(read_requests_mutex_);
 
     if (is_connected()) {
-      io_service_->on_read<tcp::socket>(
-          socket_, std::bind(&client::on_read, this, std::placeholders::_1));
+      io_service_->on_read<tcp::socket>(socket_, std::bind(&client::on_read, this, std::placeholders::_1));
       read_requests_.push(std::make_pair(size, callback));
     } else {
       throw std::logic_error("hermes::network::tcp::client is not connected.");
     }
   }
 
-	void async_write(const std::string &str,
-                  const async_write_callback_t &callback) {
+	void async_write(const std::string &str, const async_write_callback_t &callback) {
     async_write(std::vector<char>(str.begin(), str.end()), callback);
   }
 
-  void async_write(const std::vector<char> &data,
-                   const async_write_callback_t &callback) {
+  void async_write(const std::vector<char> &data, const async_write_callback_t &callback) {
     std::lock_guard<std::mutex> lock(write_requests_mutex_);
 
     if (is_connected()) {
-      io_service_->on_write<tcp::socket>(
-          socket_, std::bind(&client::on_write, this, std::placeholders::_1));
+      io_service_->on_write<tcp::socket>(socket_, std::bind(&client::on_write, this, std::placeholders::_1));
       write_requests_.push(std::make_pair(data, callback));
     } else {
       throw std::logic_error("hermes::network::tcp::client is not connected.");
@@ -1028,8 +992,7 @@ class client {
 
   void connect(const std::string &host, unsigned int port) {
     if (is_connected()) {
-      throw std::logic_error(
-          "hermes::network::tcp::client is already connected.");
+      throw std::logic_error("hermes::network::tcp::client is already connected.");
     }
 
     try {
@@ -1045,36 +1008,30 @@ class client {
 
   void disconnect() {
     if (!is_connected()) {
-      // throw std::logic_error(
-      //     "hermes::network::tcp::client is already disconnected.");
-			return;
+      is_connected_ = false;
+
+			{
+				std::lock_guard<std::mutex> lock(read_requests_mutex_);
+				std::queue<std::pair<std::size_t, async_read_callback_t> > rempty;
+				std::swap(read_requests_, rempty);
+			}
+
+			{
+				std::lock_guard<std::mutex> lock(write_requests_mutex_);
+				std::queue<std::pair<std::vector<char>, async_write_callback_t> > wempty;
+				std::swap(write_requests_, wempty);
+			}
+
+			io_service_->unsubscribe<tcp::socket>(socket_);
+			io_service_->wait_for_unsubscription<tcp::socket>(socket_);
+			socket_.close();
     }
-
-    is_connected_ = false;
-
-    {
-      std::lock_guard<std::mutex> lock(read_requests_mutex_);
-      std::queue<std::pair<std::size_t, async_read_callback_t> > rempty;
-      std::swap(read_requests_, rempty);
-    }
-
-    {
-      std::lock_guard<std::mutex> lock(write_requests_mutex_);
-      std::queue<std::pair<std::vector<char>, async_write_callback_t> > wempty;
-      std::swap(write_requests_, wempty);
-    }
-
-    io_service_->unsubscribe<tcp::socket>(socket_);
-    io_service_->wait_for_unsubscription<tcp::socket>(socket_);
-    socket_.close();
   }
 
  public:
   const std::string &host(void) const { return socket_.host(); }
 
-  const std::shared_ptr<internal::io_service> &io_service(void) const {
-    return io_service_;
-  }
+  const std::shared_ptr<internal::io_service> &io_service(void) const { return io_service_; }
 
   bool is_connected(void) const { return is_connected_; }
 
@@ -1093,19 +1050,14 @@ class client {
 
   std::mutex read_requests_mutex_;
 
-  std::queue<std::pair<std::vector<char>, async_write_callback_t> >
-      write_requests_;
+  std::queue<std::pair<std::vector<char>, async_write_callback_t>> write_requests_;
 
   std::mutex write_requests_mutex_;
 };
 
 class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
-  server(void)
-      //
-      //
-      //
-      : io_service_(internal::get_io_service(-1)), conn_callback_(nullptr) {}
+  server(void) : io_service_(internal::get_io_service(-1)), conn_callback_(nullptr) {}
 
   ~server(void) { stop(); }
 
@@ -1121,8 +1073,7 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
   }
 
  public:
-  typedef std::function<void(const std::shared_ptr<client> &)>
-      connection_callback_t;
+  typedef std::function<void(const std::shared_ptr<client> &)> connection_callback_t;
 
   void on_connection(const connection_callback_t &callback) {
     if (!callback) {
@@ -1135,11 +1086,9 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     conn_callback_ = callback;
   }
 
-  void run(const std::string &host, unsigned int port,
-           unsigned int max_conn = internal::MAX_CONN) {
+  void run(const std::string &host, unsigned int port, unsigned int max_conn = internal::MAX_CONN) {
     if (is_running()) {
-      throw std::logic_error(
-          "hermes::network::tcp::server is already running.");
+      throw std::logic_error("hermes::network::tcp::server is already running.");
     }
 
     if (!conn_callback_) {
@@ -1152,37 +1101,30 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
     socket_.bind(host, port);
     socket_.listen(max_conn);
     io_service_->subscribe<tcp::socket>(socket_);
-    io_service_->on_read<tcp::socket>(
-        socket_, std::bind(&server::on_connection_available, this,
-                           std::placeholders::_1));
+    io_service_->on_read<tcp::socket>(socket_, std::bind(&server::on_connection_available, this, std::placeholders::_1));
     is_running_ = 1;
   }
 
   void stop() {
-    if (!is_running()) {
-      throw std::logic_error("hermes::network::tcp::server is not running.");
-    }
+    if (is_running()) {
+      is_running_ = 0;
+			io_service_->unsubscribe<tcp::socket>(socket_);
+			io_service_->wait_for_unsubscription<tcp::socket>(socket_);
+			socket_.close();
 
-    is_running_ = 0;
-    io_service_->unsubscribe<tcp::socket>(socket_);
-    io_service_->wait_for_unsubscription<tcp::socket>(socket_);
-    socket_.close();
+			std::lock_guard<std::mutex> lock(mutex_);
+			for (auto &client : clients_) {
+				client->disconnect();
+			}
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (auto &client : clients_) {
-      client->disconnect();
+			clients_.clear();
     }
-    clients_.clear();
   }
 
  public:
-  const std::list<std::shared_ptr<client> > &clients(void) const {
-    return clients_;
-  }
+  const std::list<std::shared_ptr<client> > &clients(void) const { return clients_; }
 
-  const std::shared_ptr<internal::io_service> &io_service(void) const {
-    return io_service_;
-  }
+  const std::shared_ptr<internal::io_service> &io_service(void) const { return io_service_; }
 
   bool is_running(void) const { return is_running_ == 1; }
 
@@ -1209,12 +1151,11 @@ namespace udp {
 #ifdef _WIN32
 #else
 
-class client {
+class client final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
-  client(void)
-      : broadcast_mode_(false), io_service_(internal::get_io_service(-1)) {}
+  client(void) : broadcast_mode_(false), io_service_(internal::get_io_service(-1)) {}
 
-  ~client(void) { stop(); }
+  ~client(void) { }
 
  public:
   typedef std::function<void(int)> async_send_callback_t;
@@ -1261,17 +1202,13 @@ class client {
     io_service_->subscribe<udp::socket>(socket_);
   }
 
-  void async_send(const std::string &str,
-                  const async_send_callback_t &callback) {
+  void async_send(const std::string &str, const async_send_callback_t &callback) {
     async_send(std::vector<char>(str.begin(), str.end()), callback);
   }
 
-  void async_send(const std::vector<char> &data,
-                  const async_send_callback_t &callback) {
+  void async_send(const std::vector<char> &data, const async_send_callback_t &callback) {
     if (broadcast_mode_enabled()) {
-      throw std::logic_error(
-          "hermes::network::udp::client: Broadcast mode enabled. Use "
-          "'async_broadcast'.");
+      throw std::logic_error("hermes::network::udp::client: Broadcast mode enabled. Use 'async_broadcast'.");
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
@@ -1279,25 +1216,19 @@ class client {
     if (callback) {
       send_requests_.push(std::make_pair(data, callback));
       io_service_->on_write<udp::socket>(
-          socket_, std::bind(&client::on_send, this, std::placeholders::_1));
-
+      socket_, std::bind(&client::on_send, this, std::placeholders::_1));
     } else {
-      throw std::invalid_argument(
-          "hermes::network::udp::client: You must provide a callback.");
+      throw std::invalid_argument("hermes::network::udp::client: You must provide a callback.");
     }
   }
 
-  void async_broadcast(const std::string &str,
-                       const async_send_callback_t &callback) {
+  void async_broadcast(const std::string &str, const async_send_callback_t &callback) {
     async_broadcast(std::vector<char>(str.begin(), str.end()), callback);
   }
 
-  void async_broadcast(const std::vector<char> &data,
-                       const async_send_callback_t &callback) {
+  void async_broadcast(const std::vector<char> &data, const async_send_callback_t &callback) {
     if (!broadcast_mode_enabled()) {
-      throw std::logic_error(
-          "hermes::network::udp::client: Broadcast mode disabled. Use "
-          "'async_send'.");
+      throw std::logic_error("hermes::network::udp::client: Broadcast mode disabled. Use 'async_send'.");
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
@@ -1305,10 +1236,9 @@ class client {
     if (callback) {
       send_requests_.push(std::make_pair(data, callback));
       io_service_->on_write<udp::socket>(
-          socket_, std::bind(&client::on_send, this, std::placeholders::_1));
+      socket_, std::bind(&client::on_send, this, std::placeholders::_1));
     } else {
-      throw std::invalid_argument(
-          "hermes::network::udp::client: You must provide a callback");
+      throw std::invalid_argument("hermes::network::udp::client: You must provide a callback");
     }
   }
 
@@ -1316,11 +1246,7 @@ class client {
     broadcast_mode_ = false;
     io_service_->unsubscribe<udp::socket>(socket_);
     io_service_->wait_for_unsubscription<udp::socket>(socket_);
-    try {
-      socket_.close();
-    } catch (const std::exception &e) {
-      std::cerr << e.what() << std::endl;
-    }
+    socket_.close();
   }
 
  private:
@@ -1330,19 +1256,14 @@ class client {
 
   std::mutex mutex_;
 
-  std::queue<std::pair<std::vector<char>, async_send_callback_t> >
-      send_requests_;
+  std::queue<std::pair<std::vector<char>, async_send_callback_t>> send_requests_;
 
   udp::socket socket_;
 };
 
 class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
-  server(void)
-      //
-      //
-      //
-      : io_service_(internal::get_io_service(-1)) {}
+  server(void): io_service_(internal::get_io_service(-1)) {}
 
   ~server(void) { stop(); }
 
@@ -1372,46 +1293,39 @@ class server final : internal::_no_default_ctor_cpy_ctor_mv_ctor_assign_op_ {
  public:
   void async_recvfrom(const async_receive_callback_t &callback) {
     if (!socket_.bound()) {
-      throw std::logic_error(
-          "hermes::network::udp::server: You need to bind the server before.");
+      throw std::logic_error("hermes::network::udp::server: You need to bind the server before.");
     }
 
     if (callback) {
       callback_ = callback;
     } else {
-      throw std::invalid_argument(
-          "hermes::network::udp::server: You must provide a callback.");
+      throw std::invalid_argument("hermes::network::udp::server: You must provide a callback.");
     }
   }
 
   void bind(const std::string &host, unsigned int port) {
     if (is_running()) {
-      throw std::logic_error(
-          "hermes::network::udp::server is already running.");
+      throw std::logic_error("hermes::network::udp::server is already running.");
     }
 
     socket_.bind(host, port);
     io_service_->subscribe<udp::socket>(socket_);
     io_service_->on_read<udp::socket>(
-        socket_, std::bind(&server::on_read, this, std::placeholders::_1));
+    socket_, std::bind(&server::on_read, this, std::placeholders::_1));
     is_running_ = 1;
   }
 
   void stop() {
-    if (!is_running()) {
-      throw std::logic_error("hermes::network::udp::server is not running.");
+    if (is_running()) {
+      is_running_ = 0;
+			io_service_->unsubscribe<udp::socket>(socket_);
+			io_service_->wait_for_unsubscription<udp::socket>(socket_);
+			socket_.close();
     }
-
-    is_running_ = 0;
-    io_service_->unsubscribe<udp::socket>(socket_);
-    io_service_->wait_for_unsubscription<udp::socket>(socket_);
-    socket_.close();
   }
 
  public:
-  const std::shared_ptr<internal::io_service> &io_service(void) const {
-    return io_service_;
-  }
+  const std::shared_ptr<internal::io_service> &io_service(void) const { return io_service_; }
 
   bool is_running(void) const { return is_running_ == 1; }
 
