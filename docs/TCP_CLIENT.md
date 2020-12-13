@@ -75,7 +75,7 @@ when the socket is ready for read or write data. Callbacks must be provided for 
     }
   }
 
-	void on_write(tcp::client& client, bool& success, std::size_t &sent) {
+  void on_write(tcp::client& client, bool& success, std::size_t &sent) {
     if (success) {
       client.async_read(4096, std::bind(&on_read, std::ref(client), std::placeholders::_1, std::placeholders::_2));
     } else {
