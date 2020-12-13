@@ -223,7 +223,7 @@ class socket {
 
   bool operator==(const socket &s) const { return fd_ == s.fd(); }
 
-  ~socket(void) { close(); }
+  ~socket(void) = default;
 
  public:
   bool bound(void) const { return bound_; }
@@ -427,7 +427,7 @@ class socket {
 
   bool operator==(const socket &s) const { return fd_ == s.fd(); }
 
-  ~socket(void) { close(); }
+  ~socket(void) = default;
 
  public:
   void init_datagram_socket(const std::string &host, unsigned int port, bool broadcasting) {
