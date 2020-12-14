@@ -57,7 +57,7 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
   int main(void) {
     client client;
 
-    client.init("127.0.0.1", 27017, false);
+    client.init("127.0.0.1", 8080, false);
 
     client.async_send("Hello world!\n", [](int bytes_sent) {
       std::cout << "Number of bytes sent: " << bytes_sent << std::endl;
@@ -83,7 +83,7 @@ If you enabled the broadcast mode, please use the 'async_broadcast' method to br
        return 1;
     }
 
-    client.init(av[1], 27017, true);
+    client.init(av[1], 8080, true);
 
     client.async_broadcast("Hello world!\n", [](int bytes_sent) {
     	std::cout << "Number of bytes sent: " << bytes_sent << std::endl;
