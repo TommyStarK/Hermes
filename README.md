@@ -5,10 +5,6 @@
 > _Hermes is an Olympian god in Greek religion and mythology. Moving freely between the worlds of the mortal and the divine,
  he is portrayed as emissary and the messenger of the gods._
 
-> _Hermes suffers from no limit. He loves to outwit other gods for his own satisfaction or for the sake of humankind._
-
-
-
 `Hermes` is a lightweight, header-only, cross-platform (not yet), thread-safe, asynchronous, `C++11` network library with no dependencies.
 
 ## Requirement
