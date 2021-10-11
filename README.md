@@ -1,4 +1,4 @@
-# Hermes    [![Build Status](https://travis-ci.org/TommyStarK/Hermes.svg?branch=master)](https://travis-ci.org/TommyStarK/Hermes) [![Build status](https://ci.appveyor.com/api/projects/status/iy8683phxsf2dyui?svg=true)](https://ci.appveyor.com/project/TommyStarK/hermes)  [![codecov](https://codecov.io/gh/TommyStarK/Hermes/branch/master/graph/badge.svg)](https://codecov.io/gh/TommyStarK/Hermes) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+# Hermes    [![Build Status](https://travis-ci.com/TommyStarK/Hermes.svg?branch=master)](https://travis-ci.org/TommyStarK/Hermes) [![Build status](https://ci.appveyor.com/api/projects/status/iy8683phxsf2dyui?svg=true)](https://ci.appveyor.com/project/TommyStarK/hermes)  [![codecov](https://codecov.io/gh/TommyStarK/Hermes/branch/master/graph/badge.svg)](https://codecov.io/gh/TommyStarK/Hermes) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 
 
