@@ -24,7 +24,7 @@ TEST_CASE("Thread pool tests", "[internal][thread_pool]") {
     pool.register_task([]() { std::cout << "processing: job 5\n"; });
 
     pool.stop();
-		display("[internal][thread_pool] Testing default behavior");
+    display("[internal][thread_pool] Testing default behavior");
   }
 }
 
@@ -124,7 +124,7 @@ TEST_CASE("TCP socket tests server operations",
 
     REQUIRE_NOTHROW(server.join());
     REQUIRE_NOTHROW(client.join());
-		display("[TCP][socket] Testing accept new connection");
+    display("[TCP][socket] Testing accept new connection");
   }
 }
 
@@ -156,7 +156,7 @@ TEST_CASE("TCP socket tests client operations",
 
     REQUIRE_NOTHROW(server.join());
     REQUIRE_NOTHROW(client.join());
-		display("[TCP][socket] Testing send/receive data");
+    display("[TCP][socket] Testing send/receive data");
   }
 }
 
@@ -171,7 +171,7 @@ TEST_CASE("TCP server/client tests", "[network][tcp][server][client]") {
     CHECK(server.get_socket().fd() == -1);
     CHECK(!server.get_socket().bound());
     CHECK_THROWS_AS(server.run("127.0.0.1", 27017), std::logic_error);
-		display("[TCP][server] Default behavior");
+    display("[TCP][server] Default behavior");
   }
 
   SECTION("Default TCP client should have default behaviour") {
@@ -182,11 +182,11 @@ TEST_CASE("TCP server/client tests", "[network][tcp][server][client]") {
     CHECK(!client.get_socket().bound());
     CHECK_THROWS_AS(client.async_write("", nullptr), std::logic_error);
     CHECK_THROWS_AS(client.async_read(1024, nullptr), std::logic_error);
-		display("[TCP][client] Default behavior");
+    display("[TCP][client] Default behavior");
   }
 
-	SECTION("Should correctly send and receive data") {
-		tcp::server server;
+  SECTION("Should correctly send and receive data") {
+    tcp::server server;
     tcp::client client;
 
     std::thread thread_server([&server] {
@@ -194,11 +194,11 @@ TEST_CASE("TCP server/client tests", "[network][tcp][server][client]") {
       server.on_connection([](const std::shared_ptr<tcp::client> &client) {
         client->async_read(1024, [](bool success, std::vector<char> data) {
           REQUIRE(success);
-					REQUIRE((unsigned)std::strlen(data.data()) == 13);
+          REQUIRE((unsigned)std::strlen(data.data()) == 13);
         });
       });
 
-			REQUIRE_NOTHROW(server.run("127.0.0.1", 27017));
+      REQUIRE_NOTHROW(server.run("127.0.0.1", 27017));
       std::this_thread::sleep_for(std::chrono::milliseconds(1000));
       REQUIRE_THROWS_AS(server.run("127.0.0.1", 27017), std::logic_error);
     });
@@ -210,19 +210,19 @@ TEST_CASE("TCP server/client tests", "[network][tcp][server][client]") {
       REQUIRE_NOTHROW(client.connect("127.0.0.1", 27017));
 
       client.async_write("Hello world!\n", [](bool success, std::size_t sent) {
-					REQUIRE(success);
-					REQUIRE(sent == 13);
+          REQUIRE(success);
+          REQUIRE(sent == 13);
       });
 
-			REQUIRE_THROWS_AS(client.connect("127.0.0.1", 27017), std::logic_error);
-			client.disconnect();
+      REQUIRE_THROWS_AS(client.connect("127.0.0.1", 27017), std::logic_error);
+      client.disconnect();
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-		server.stop();
+    server.stop();
     REQUIRE_NOTHROW(thread_server.join());
     REQUIRE_NOTHROW(thread_client.join());
-		display("[TCP][client][server] Testing send/receive data");
+    display("[TCP][client][server] Testing send/receive data");
   }
 }
 
@@ -243,7 +243,7 @@ TEST_CASE("UDP socket tests", "[network][udp][socket][default]") {
       CHECK(socket1 == socket2);
     }
 
-		display("[UDP][socket] Testing default socket");
+    display("[UDP][socket] Testing default socket");
   }
 
   SECTION("Default UDP socket should have default behaviour") {
@@ -253,7 +253,7 @@ TEST_CASE("UDP socket tests", "[network][udp][socket][default]") {
     REQUIRE_THROWS_AS((void)socket.sendto(""), std::logic_error);
     REQUIRE_THROWS_AS((void)socket.broadcast(""), std::logic_error);
     REQUIRE_THROWS_AS((void)socket.recvfrom(buffer), std::logic_error);
-		display("[UDP][socket] Testing default behavior");
+    display("[UDP][socket] Testing default behavior");
   }
 
   SECTION("Should initialize a default datagram socket") {
@@ -312,7 +312,7 @@ TEST_CASE("UDP socket tests", "[network][udp][socket][default]") {
       CHECK(socket1.port() == 27017);
       CHECK(socket1.bound());
       CHECK((socket1 == socket2) == false);
-			display("[UDP][socket] Testing bind");
+      display("[UDP][socket] Testing bind");
     }
 
     REQUIRE_NOTHROW(socket1.close());
@@ -351,7 +351,7 @@ TEST_CASE("UDP socket tests sending/broadcasting/receiving data.",
 
     REQUIRE_NOTHROW(server.join());
     REQUIRE_NOTHROW(client.join());
-		display("[UDP][socket] Testing send/receive data");
+    display("[UDP][socket] Testing send/receive data");
   }
 }
 
@@ -366,7 +366,7 @@ TEST_CASE("UDP server/client tests", "[network][udp][server][client]") {
     CHECK(server.get_socket().fd() == -1);
     CHECK(!server.get_socket().bound());
     REQUIRE_THROWS_AS(server.async_recvfrom(nullptr), std::logic_error);
-		display("[UDP][server] Default behaviour");
+    display("[UDP][server] Default behaviour");
   }
 
   SECTION("Default UDP client should have default behaviour") {
@@ -375,8 +375,8 @@ TEST_CASE("UDP server/client tests", "[network][udp][server][client]") {
     CHECK(client.get_socket().fd() == -1);
     CHECK(!client.get_socket().bound());
     CHECK(!client.broadcast_mode_enabled());
-		REQUIRE_NOTHROW(client.stop());
-		display("[UDP][client] Default behaviour");
+    REQUIRE_NOTHROW(client.stop());
+    display("[UDP][client] Default behaviour");
   }
 
   SECTION("Should correctly send and receive data") {
@@ -389,7 +389,7 @@ TEST_CASE("UDP server/client tests", "[network][udp][server][client]") {
 
       server.async_recvfrom([](std::vector<char> data, int bytes_read) {
         REQUIRE(bytes_read == 13);
-				REQUIRE((unsigned)std::strlen(data.data()) == 13);
+        REQUIRE((unsigned)std::strlen(data.data()) == 13);
       });
 
       std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -406,13 +406,13 @@ TEST_CASE("UDP server/client tests", "[network][udp][server][client]") {
         REQUIRE(bytes_sent == 13);
       });
 
-			client.stop();
+      client.stop();
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-		server.stop();
+    server.stop();
     REQUIRE_NOTHROW(thread_server.join());
     REQUIRE_NOTHROW(thread_client.join());
-		display("[UDP][client][server] Testing send/receive data");
+    display("[UDP][client][server] Testing send/receive data");
   }
 }
